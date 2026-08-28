@@ -1,4 +1,4 @@
-const API_BASE = "http://127.0.0.1:8001";
+const API_BASE = "http://127.0.0.1:8000";
 const API_URL = `${API_BASE}/diagnostico`;
 const DASHBOARD_POLL_MS = 30000;
 
@@ -1300,6 +1300,7 @@ function bindDashboardActions() {
   if (state.dashboardData?.mapa_inteligente) {
     initMapaInteligente(state.dashboardData.mapa_inteligente);
   }
+  bindScenarioSimulator();
 }
 
 function renderAlertas(alertas) {
@@ -1370,6 +1371,57 @@ function renderMapaSection(mapa) {
   `;
 }
 
+function renderScenarioSimulator() {
+  return `
+    <section class="dashboard-section scenario-simulator" aria-labelledby="scenario-heading">
+      <h2 id="scenario-heading" class="dashboard-section__title">Simulador de escenarios</h2>
+      <p class="ayudas__intro">Ajusta los recursos disponibles y compara el impacto proyectado.</p>
+      <div class="scenario-inputs">
+        ${renderScenarioInput("presupuesto", "Presupuesto (millones COP)", 0, 1000, 500)}
+        ${renderScenarioInput("kits", "Kits de emergencia", 0, 1000, 500)}
+        ${renderScenarioInput("tecnicos", "Técnicos disponibles", 0, 100, 30)}
+      </div>
+      <div class="scenario-results">
+        <article class="scenario-card scenario-card--alert"><p class="scenario-card__label">Escenario A</p><p class="scenario-card__description">Priorizar familias vulnerables</p><strong id="scenario-a" class="scenario-card__value">— personas</strong></article>
+        <article class="scenario-card scenario-card--primary"><p class="scenario-card__label">Escenario B</p><p class="scenario-card__description">Priorizar reparación básica</p><strong id="scenario-b" class="scenario-card__value">— viviendas</strong></article>
+        <article class="scenario-card scenario-card--success"><p class="scenario-card__label">Escenario C</p><p class="scenario-card__description">Priorizar recuperación productiva</p><strong id="scenario-c" class="scenario-card__value">— negocios</strong></article>
+      </div>
+      <p class="scenario-simulator__disclaimer">La plataforma recomienda escenarios; la decisión final es de la entidad.</p>
+    </section>
+  `;
+}
+
+function renderScenarioInput(id, label, min, max, value) {
+  return `<div class="scenario-input"><label for="scenario-${id}">${label}</label><div class="scenario-input__controls"><input id="scenario-${id}" type="range" min="${min}" max="${max}" value="${value}" data-scenario-input="${id}"><input type="number" min="${min}" max="${max}" value="${value}" data-scenario-number="${id}" aria-label="Valor de ${label}"></div></div>`;
+}
+
+function bindScenarioSimulator() {
+  const values = { presupuesto: 500, kits: 500, tecnicos: 30 };
+  document.querySelectorAll("[data-scenario-input], [data-scenario-number]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const id = input.dataset.scenarioInput || input.dataset.scenarioNumber;
+      const value = Math.min(Number(input.max), Math.max(Number(input.min), Number(input.value) || 0));
+      values[id] = value;
+      document.querySelector(`[data-scenario-input="${id}"]`).value = value;
+      document.querySelector(`[data-scenario-number="${id}"]`).value = value;
+      updateScenarioResults(values);
+    });
+  });
+  updateScenarioResults(values);
+}
+
+function updateScenarioResults(values) {
+  const results = {
+    "scenario-a": `${Math.round(values.presupuesto * 0.9 + values.kits * 0.4).toLocaleString("es-CO")} personas`,
+    "scenario-b": `${Math.round(values.tecnicos * 7 + values.presupuesto * 0.15).toLocaleString("es-CO")} viviendas`,
+    "scenario-c": `${Math.round(values.presupuesto * 0.12 + values.tecnicos * 1.5).toLocaleString("es-CO")} negocios`,
+  };
+  Object.entries(results).forEach(([id, text]) => {
+    const element = document.getElementById(id);
+    if (element) element.textContent = text;
+  });
+}
+
 function initMapaInteligente(mapa) {
   if (!mapa || !window.L) return;
   const el = document.getElementById("mapa-afectacion");
@@ -1437,6 +1489,8 @@ function renderTendenciaBanner(tendencia) {
 
 function renderDashboard(data) {
   const t = data.tendencias || {};
+  const brechas = data.brechas || [];
+  const maxBrecha = Math.max(1, ...brechas.map((brecha) => Number(brecha.brecha) || 0));
   const metrics = [
     { label: "Afectados registrados", value: data.total_afectados, trend: t.total_afectados },
     { label: "No operativos", value: data.total_no_operativos, trend: t.total_no_operativos },
@@ -1531,14 +1585,19 @@ function renderDashboard(data) {
             </tr>
           </thead>
           <tbody>
-            ${(data.brechas || []).length > 0
-              ? data.brechas.map((brecha) => `
+            ${brechas.length > 0
+              ? brechas.map((brecha) => `
                   <tr class="brecha-row--${escapeHtml(brecha.nivel || "verde")}">
                     <td>${renderSemaforo(brecha.nivel, brecha.nivel === "rojo" ? "Crítica" : brecha.nivel === "amarillo" ? "Atención" : "Cubierta")}</td>
                     <td>${escapeHtml(brecha.necesidad)}</td>
                     <td>${brecha.solicitudes}</td>
                     <td>${brecha.recursos}</td>
-                    <td>${brecha.brecha}</td>
+                    <td class="brecha-value">
+                      <span class="brecha-value__bar" aria-hidden="true">
+                        <span class="brecha-value__fill" style="width: ${Math.round(((Number(brecha.brecha) || 0) / maxBrecha) * 100)}%"></span>
+                      </span>
+                      <strong>${brecha.brecha}</strong>
+                    </td>
                   </tr>
                 `).join("")
               : `<tr><td colspan="5">Sin datos de brechas.</td></tr>`}
@@ -1559,6 +1618,8 @@ function renderDashboard(data) {
         </div>
         <p class="ayudas__disclaimer">Recursos demostrativos. En producción se conectarían con fuentes oficiales.</p>
       </section>
+
+      ${renderScenarioSimulator()}
     </div>
   `;
 }
