@@ -34,3 +34,9 @@ DiagnosticoRequest = Annotated[
     Union[DiagnosticoAyudaInmediata, DiagnosticoVivienda, DiagnosticoIngresos],
     Field(discriminator="tipo_ruta"),
 ]
+
+
+class EscenariosInput(BaseModel):
+    presupuesto_millones: float = 500
+    kits_emergencia: int = 500
+    tecnicos: int = 30

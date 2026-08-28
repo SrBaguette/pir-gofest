@@ -1,29 +1,29 @@
 :root {
-  --bg: #f8fafc;
+  --bg: #e8ebef;
   --surface: #ffffff;
-  --text: #0f172a;
-  --text-muted: #475569;
-  --border: #e2e8f0;
-  --border-strong: #94a3b8;
-  --brand: #1e3a8a;
-  --brand-hover: #172554;
-  --brand-soft: #e8eefc;
-  --alert: #ea580c;
-  --success: #0d9488;
-  --sem-rojo: #b91c1c;
-  --sem-rojo-bg: #fef2f2;
-  --sem-rojo-border: #fecaca;
-  --sem-amarillo: #a16207;
-  --sem-amarillo-bg: #fefce8;
-  --sem-amarillo-border: #fde68a;
-  --sem-verde: #0f766e;
-  --sem-verde-bg: #f0fdfa;
-  --sem-verde-border: #99f6e4;
-  --danger: #b91c1c;
-  --radius: 3px;
-  --font-heading: "Public Sans", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
-  --font-body: "Public Sans", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --text: #1a1f26;
+  --text-muted: #5c6570;
+  --border: #c8ced6;
+  --border-strong: #9aa3ad;
+  --brand: #0d3b66;
+  --brand-hover: #0a2f52;
+  --brand-soft: #e6edf4;
+  --alert: #b45309;
+  --success: #157a3a;
+  --sem-rojo: #b42318;
+  --sem-rojo-bg: #fdecea;
+  --sem-rojo-border: #f5b5b0;
+  --sem-amarillo: #92610a;
+  --sem-amarillo-bg: #fff8e6;
+  --sem-amarillo-border: #f0d080;
+  --sem-verde: #157a3a;
+  --sem-verde-bg: #e8f6ed;
+  --sem-verde-border: #9fd4b0;
+  --danger: #b42318;
+  --radius: 6px;
+  --font-heading: "Public Sans", "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-body: "Public Sans", "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", Consolas, ui-monospace, monospace;
   --max-width: 540px;
   --max-width-wide: 1040px;
 }
@@ -34,11 +34,12 @@ body {
   margin: 0;
   min-height: 100vh;
   font-family: var(--font-body);
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 15px;
+  line-height: 1.55;
   color: var(--text);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
+  font-weight: 400;
 }
 
 h1, h2, h3, h4, button, input, th, .header__name, .header__sigla,
@@ -62,11 +63,9 @@ h1, h2, h3, h4, button, input, th, .header__name, .header__sigla,
   position: sticky;
   top: 0;
   z-index: 30;
-  margin: 0.75rem 0.75rem 0;
   background: var(--brand);
   color: #fff;
-  border-bottom: 0;
-  box-shadow: 4px 4px 0 rgba(11, 31, 51, 0.35);
+  border-bottom: 3px solid #f0c040;
 }
 
 .header__inner {
@@ -90,14 +89,14 @@ h1, h2, h3, h4, button, input, th, .header__name, .header__sigla,
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  background: rgba(255,255,255,0.15);
-  color: #fff;
-  font-weight: 800;
+  width: 2.5rem;
+  height: 2.5rem;
+  background: #fff;
+  color: var(--brand);
+  font-weight: 700;
   font-size: 0.8rem;
   letter-spacing: 0.04em;
-  border-radius: 0;
+  border-radius: var(--radius);
 }
 
 .header__titles {
@@ -213,6 +212,12 @@ h1, h2, h3, h4, button, input, th, .header__name, .header__sigla,
   gap: 0.5rem;
   margin-bottom: 1.5rem;
   flex-wrap: wrap;
+}
+
+.welcome__wa-link {
+  text-decoration: none;
+  color: inherit;
+  display: inline-flex;
 }
 
 .welcome__hint {
@@ -453,7 +458,7 @@ h1, h2, h3, h4, button, input, th, .header__name, .header__sigla,
   box-shadow: none;
   color: #fff;
   font-size: 0.65rem;
-  font-weight: 800;
+  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -598,7 +603,7 @@ h1, h2, h3, h4, button, input, th, .header__name, .header__sigla,
 
 .route-step__number {
   font-size: 0.85rem;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--brand);
   min-width: 1.5rem;
 }
@@ -872,7 +877,7 @@ h1, h2, h3, h4, button, input, th, .header__name, .header__sigla,
 .metric-card__value {
   margin: 0;
   font-size: 1.6rem;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--brand);
 }
 
@@ -927,7 +932,7 @@ h1, h2, h3, h4, button, input, th, .header__name, .header__sigla,
 .municipio-card__count {
   margin: 0;
   font-size: 1.4rem;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .ranking-list { display: flex; flex-direction: column; gap: 0.65rem; }
@@ -1032,6 +1037,38 @@ h1, h2, h3, h4, button, input, th, .header__name, .header__sigla,
 .scenario-card--success .scenario-card__label { color: var(--success); }
 .scenario-card__description { margin: 0 0 0.8rem; color: var(--text-muted); font-size: 14px; }
 .scenario-card__value { font: 600 24px/1 var(--font-mono); }
+.scenario-card__detail { margin: 0.5rem 0 0; font-size: 12px; color: var(--text-muted); }
+.scenario-card--recommended { outline: 2px solid var(--brand); outline-offset: 2px; }
+.scenario-context { margin: 0 0 1rem; font-size: 14px; color: var(--text-muted); }
+.scenario-recomendacion { margin: 0.75rem 0 0; font-weight: 600; color: var(--brand); }
+
+.recursos-zona-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+.recurso-zona-card {
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.recurso-zona-card__title { margin: 0 0 0.5rem; font-size: 1rem; color: var(--brand); }
+.recurso-zona-card__stat { margin: 0 0 0.35rem; font-size: 14px; }
+.recurso-zona-card__mun { margin: 0; font-size: 12px; color: var(--text-muted); }
+.recursos-table { margin-top: 0.5rem; }
+.recursos-table small { color: var(--text-muted); }
+
+.dashboard-section--ia .resumen-ia {
+  padding: 1rem;
+  border-left: 4px solid #7c3aed;
+  background: rgba(124, 58, 237, 0.06);
+  border-radius: 0 8px 8px 0;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
 .scenario-simulator__disclaimer { margin: 1rem 0 0; color: var(--text-muted); font-size: 12px; font-style: italic; }
 
 .brechas-table th {
@@ -1081,7 +1118,7 @@ h1, h2, h3, h4, button, input, th, .header__name, .header__sigla,
 
 .alerta__nivel {
   font-size: 0.7rem;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
@@ -1237,4 +1274,5 @@ h1, h2, h3, h4, button, input, th, .header__name, .header__sigla,
   .dashboard-section { padding: 1rem; }
   .brechas-table { display: block; overflow-x: auto; }
   .scenario-inputs, .scenario-results { grid-template-columns: 1fr; }
+  .recursos-zona-grid { grid-template-columns: 1fr; }
 }

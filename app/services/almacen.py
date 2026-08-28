@@ -22,6 +22,7 @@ from app.services.ml_necesidades import (
     registrar_snapshot,
 )
 from app.services.ml_mapa import generar_mapa_inteligente
+from app.services.catalogo_recursos import resumen_por_zona
 
 _pasaportes: dict[str, dict] = {}
 _contador = 0
@@ -202,10 +203,12 @@ MAPEO_NECESIDAD_RECURSO = {
 
 
 def _contar_recursos_por_categoria(recursos: list[dict]) -> dict[str, int]:
+    """Suma unidades disponibles (cupos), no solo cantidad de ítems del catálogo."""
     conteo: dict[str, int] = {}
     for recurso in recursos:
         clave = recurso["categoria"].lower()
-        conteo[clave] = conteo.get(clave, 0) + 1
+        unidades = int(recurso.get("unidades_disponibles", 1))
+        conteo[clave] = conteo.get(clave, 0) + unidades
     return conteo
 
 
@@ -285,8 +288,9 @@ def _generar_alertas(resumen: dict, tendencias: dict) -> list[dict]:
             "nivel": "alta" if nivel == "rojo" else "media",
             "mensaje": (
                 f"Brecha detectada en {mayor['necesidad']}: "
-                f"{mayor['solicitudes']} solicitudes vs {mayor['recursos']} recursos demo."
+                f"{mayor['solicitudes']} solicitudes vs {mayor['recursos']} unidades disponibles (demo)."
             ),
+            "origen": "reglas",
         })
 
     tendencia = resumen.get("tendencia_emergente")
@@ -298,13 +302,6 @@ def _generar_alertas(resumen: dict, tendencias: dict) -> list[dict]:
                 f"{tendencia['necesidad']} concentrados en {tendencia['municipio']} "
                 f"({tendencia['casos']} casos)."
             ),
-        })
-
-    for ml1 in resumen.get("ml_necesidades_emergentes", [])[:3]:
-        alertas.insert(0, {
-            "nivel": "alta" if ml1["nivel"] == "rojo" else "media",
-            "mensaje": ml1["mensaje"],
-            "accion_recomendada": ml1.get("accion_recomendada"),
         })
 
     if not alertas:
@@ -369,6 +366,8 @@ def obtener_resumen_dashboard(recursos_disponibles: list[dict]) -> dict:
         "ml_necesidades_emergentes": ml_necesidades_emergentes,
         "mapa_inteligente": mapa_inteligente,
         "recursos_disponibles": recursos_disponibles,
+        "recursos_total": len(recursos_disponibles),
+        "recursos_resumen_zonas": resumen_por_zona(),
     }
 
     if _resumen_anterior is None:

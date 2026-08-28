@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PIR — Canal WhatsApp</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="whatsapp-demo.css">
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <div class="header__inner">
+        <div class="header__brand">
+          <span class="header__sigla">PIR</span>
+          <div class="header__titles">
+            <span class="header__name">Canal WhatsApp</span>
+            <span class="header__tagline">Diagnóstico conversacional · Post-emergencia</span>
+          </div>
+        </div>
+        <nav class="header__nav">
+          <a class="wa-demo__back" href="index.html">App principal</a>
+          <span class="wa-demo__status" id="api-status">Verificando API…</span>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wa-demo">
+      <section class="wa-demo__main">
+        <div class="wa-demo__intro card">
+          <h1 class="wa-demo__title">Ruta de recuperación por WhatsApp</h1>
+          <p class="wa-demo__lead">
+            Interfaz de demostración del flujo real: menú de tres rutas, preguntas guiadas
+            y emisión del Pasaporte de Recuperación conectado al backend PIR.
+          </p>
+          <div class="wa-demo__routes">
+            <button type="button" class="wa-route-btn" data-route="1">
+              <span class="wa-route-btn__n">1</span>
+              <span>Ayuda inmediata</span>
+            </button>
+            <button type="button" class="wa-route-btn" data-route="2">
+              <span class="wa-route-btn__n">2</span>
+              <span>Recuperar vivienda</span>
+            </button>
+            <button type="button" class="wa-route-btn" data-route="3">
+              <span class="wa-route-btn__n">3</span>
+              <span>Recuperar ingresos</span>
+            </button>
+          </div>
+          <div class="wa-demo__toolbar">
+            <button type="button" class="btn btn--primary" id="btn-auto">Recorrido guiado (ruta 3)</button>
+            <button type="button" class="btn btn--secondary" id="btn-reset">Nueva conversación</button>
+          </div>
+        </div>
+
+        <div class="wa-phone" aria-label="Simulador WhatsApp">
+          <div class="wa-phone__screen">
+            <div class="wa-phone__header">
+              <div>
+                <strong>Pasaporte Inteligente de Recuperación</strong>
+                <small>Cuenta verificada · canal institucional</small>
+              </div>
+            </div>
+            <div class="wa-phone__chat" id="chat" role="log" aria-live="polite"></div>
+            <form class="wa-phone__form" id="chat-form">
+              <input id="chat-input" type="text" placeholder="Escriba su mensaje…" autocomplete="off">
+              <button type="submit" class="wa-phone__send" aria-label="Enviar">Enviar</button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <aside class="wa-demo__aside">
+        <div class="card wa-json-panel">
+          <h2 class="wa-json-panel__title">Respuesta del sistema</h2>
+          <p class="wa-json-panel__hint">JSON del pasaporte y ruta generados al completar el diagnóstico.</p>
+          <pre id="json-out" class="wa-json-panel__code">Inicie una conversación o seleccione una ruta.</pre>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="whatsapp-demo.js"></script>
+</body>
+</html>

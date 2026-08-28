@@ -1,4 +1,4 @@
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = "http://127.0.0.1:8015";
 const API_URL = `${API_BASE}/diagnostico`;
 const DASHBOARD_POLL_MS = 30000;
 
@@ -357,12 +357,15 @@ function renderWelcome() {
       </p>
       <div class="welcome__channels">
         ${renderSemaforo("verde", "Web")}
-        ${renderSemaforo("amarillo", "WhatsApp próximamente")}
+        <a href="whatsapp-demo.html" class="welcome__wa-link">${renderSemaforo("amarillo", "WhatsApp")}</a>
       </div>
       <div class="actions actions--single">
         <button type="button" class="btn btn--primary btn--wide" id="btn-start">
           Iniciar diagnóstico
         </button>
+        <a href="whatsapp-demo.html" class="btn btn--accent btn--wide" style="text-align:center;text-decoration:none;display:inline-flex;align-items:center;justify-content:center">
+          Canal WhatsApp (demo)
+        </a>
         <button type="button" class="btn btn--accent btn--wide" id="btn-consultar-pasaporte">
           Consultar pasaporte
         </button>
@@ -1305,10 +1308,11 @@ function bindDashboardActions() {
 
 function renderAlertas(alertas) {
   if (!alertas || alertas.length === 0) {
-    return `<p class="ayudas__empty">Sin alertas activas.</p>`;
+    return `<p class="ayudas__empty">Sin alertas operativas activas.</p>`;
   }
 
   return `
+    <p class="ayudas__intro">Generadas por reglas del sistema (cambios, concentración, brechas). No usan IA.</p>
     <ul class="alertas-list">
       ${alertas.map((alerta) => `
         <li class="alerta alerta--${escapeHtml(alerta.nivel || "info")}">
@@ -1320,6 +1324,37 @@ function renderAlertas(alertas) {
         </li>
       `).join("")}
     </ul>
+  `;
+}
+
+function renderResumenIA(resumen) {
+  if (!resumen) {
+    return `
+      <section class="dashboard-section dashboard-section--ia">
+        <h2 class="dashboard-section__title">Resumen ejecutivo (IA)</h2>
+        <p class="ayudas__empty">Gemini no está activo. Las alertas y el simulador funcionan sin IA.</p>
+      </section>
+    `;
+  }
+  const texto = resumen.resumen_ejecutivo || resumen.resumen || resumen.texto;
+  if (!texto) {
+    return `
+      <section class="dashboard-section dashboard-section--ia">
+        <h2 class="dashboard-section__title">Resumen ejecutivo (IA)</h2>
+        <p class="ayudas__empty">Sin narrativa IA disponible (Gemini inactivo o sin datos).</p>
+      </section>
+    `;
+  }
+  const titulo = resumen.titulo ? `<strong>${escapeHtml(resumen.titulo)}</strong><br>` : "";
+  const accion = resumen.accion_recomendada
+    ? `<p class="resumen-ia__accion">→ ${escapeHtml(resumen.accion_recomendada)}</p>`
+    : "";
+  return `
+    <section class="dashboard-section dashboard-section--ia">
+      <h2 class="dashboard-section__title">Resumen ejecutivo (IA — Gemini)</h2>
+      <p class="ayudas__intro">Narrativa opcional sobre patrones ya detectados por ML1/reglas. No genera alertas nuevas.</p>
+      <div class="resumen-ia">${titulo}${escapeHtml(texto)}${accion}</div>
+    </section>
   `;
 }
 
@@ -1371,21 +1406,90 @@ function renderMapaSection(mapa) {
   `;
 }
 
+function renderRecursosSection(data) {
+  const zonas = data.recursos_resumen_zonas || [];
+  const recursos = data.recursos_disponibles || [];
+  const total = data.recursos_total || recursos.length;
+  const muestra = recursos.slice(0, 24);
+
+  return `
+    <section class="dashboard-section">
+      <h2 class="dashboard-section__title">Recursos disponibles (demostrativos)</h2>
+      <p class="ayudas__intro">
+        Catálogo de <strong>${total}</strong> recursos repartidos por zona de afectación sísmica
+        (Valle Norte, Valle Sur, Cauca). Las brechas comparan solicitudes vs unidades disponibles.
+      </p>
+      <div class="recursos-zona-grid">
+        ${zonas.map((zona) => `
+          <article class="recurso-zona-card">
+            <h3 class="recurso-zona-card__title">${escapeHtml(zona.zona)}</h3>
+            <p class="recurso-zona-card__stat"><strong>${zona.recursos}</strong> tipos · <strong>${zona.unidades_totales}</strong> unidades</p>
+            <p class="recurso-zona-card__mun">${escapeHtml((zona.municipios || []).join(", "))}</p>
+          </article>
+        `).join("")}
+      </div>
+      <table class="brechas-table recursos-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Recurso</th>
+            <th>Zona</th>
+            <th>Municipio</th>
+            <th>Unidades</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${muestra.map((r) => `
+            <tr>
+              <td>${escapeHtml(r.id || "—")}</td>
+              <td><strong>${escapeHtml(r.nombre)}</strong><br><small>${escapeHtml(r.categoria)}</small></td>
+              <td>${escapeHtml(r.zona_sismica || "—")}</td>
+              <td>${escapeHtml(r.municipio || "—")}</td>
+              <td>${r.unidades_disponibles ?? "—"}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+      ${total > muestra.length ? `<p class="ayudas__disclaimer">Mostrando ${muestra.length} de ${total}. Catálogo completo en <code>GET /recursos/catalogo</code>.</p>` : ""}
+      <p class="ayudas__disclaimer">Datos demostrativos. En producción se conectarían con fuentes oficiales verificadas.</p>
+    </section>
+  `;
+}
+
 function renderScenarioSimulator() {
   return `
     <section class="dashboard-section scenario-simulator" aria-labelledby="scenario-heading">
       <h2 id="scenario-heading" class="dashboard-section__title">Simulador de escenarios</h2>
-      <p class="ayudas__intro">Ajusta los recursos disponibles y compara el impacto proyectado.</p>
+      <p class="ayudas__intro">
+        Cruza casos registrados, brechas y recursos de entrada. Cálculo por reglas transparentes (sin IA).
+      </p>
       <div class="scenario-inputs">
         ${renderScenarioInput("presupuesto", "Presupuesto (millones COP)", 0, 1000, 500)}
         ${renderScenarioInput("kits", "Kits de emergencia", 0, 1000, 500)}
         ${renderScenarioInput("tecnicos", "Técnicos disponibles", 0, 100, 30)}
       </div>
+      <p id="scenario-context" class="scenario-context">Cargando contexto territorial…</p>
       <div class="scenario-results">
-        <article class="scenario-card scenario-card--alert"><p class="scenario-card__label">Escenario A</p><p class="scenario-card__description">Priorizar familias vulnerables</p><strong id="scenario-a" class="scenario-card__value">— personas</strong></article>
-        <article class="scenario-card scenario-card--primary"><p class="scenario-card__label">Escenario B</p><p class="scenario-card__description">Priorizar reparación básica</p><strong id="scenario-b" class="scenario-card__value">— viviendas</strong></article>
-        <article class="scenario-card scenario-card--success"><p class="scenario-card__label">Escenario C</p><p class="scenario-card__description">Priorizar recuperación productiva</p><strong id="scenario-c" class="scenario-card__value">— negocios</strong></article>
+        <article class="scenario-card scenario-card--alert" data-scenario-id="A">
+          <p class="scenario-card__label">Escenario A</p>
+          <p class="scenario-card__description">Priorizar familias vulnerables</p>
+          <strong id="scenario-a" class="scenario-card__value">— personas</strong>
+          <p id="scenario-a-detail" class="scenario-card__detail"></p>
+        </article>
+        <article class="scenario-card scenario-card--primary" data-scenario-id="B">
+          <p class="scenario-card__label">Escenario B</p>
+          <p class="scenario-card__description">Priorizar reparación básica</p>
+          <strong id="scenario-b" class="scenario-card__value">— viviendas</strong>
+          <p id="scenario-b-detail" class="scenario-card__detail"></p>
+        </article>
+        <article class="scenario-card scenario-card--success" data-scenario-id="C">
+          <p class="scenario-card__label">Escenario C</p>
+          <p class="scenario-card__description">Priorizar recuperación productiva</p>
+          <strong id="scenario-c" class="scenario-card__value">— negocios</strong>
+          <p id="scenario-c-detail" class="scenario-card__detail"></p>
+        </article>
       </div>
+      <p id="scenario-recomendacion" class="scenario-recomendacion"></p>
       <p class="scenario-simulator__disclaimer">La plataforma recomienda escenarios; la decisión final es de la entidad.</p>
     </section>
   `;
@@ -1410,16 +1514,48 @@ function bindScenarioSimulator() {
   updateScenarioResults(values);
 }
 
-function updateScenarioResults(values) {
-  const results = {
-    "scenario-a": `${Math.round(values.presupuesto * 0.9 + values.kits * 0.4).toLocaleString("es-CO")} personas`,
-    "scenario-b": `${Math.round(values.tecnicos * 7 + values.presupuesto * 0.15).toLocaleString("es-CO")} viviendas`,
-    "scenario-c": `${Math.round(values.presupuesto * 0.12 + values.tecnicos * 1.5).toLocaleString("es-CO")} negocios`,
-  };
-  Object.entries(results).forEach(([id, text]) => {
-    const element = document.getElementById(id);
-    if (element) element.textContent = text;
-  });
+async function updateScenarioResults(values) {
+  const mapIds = { A: "scenario-a", B: "scenario-b", C: "scenario-c" };
+  try {
+    const response = await fetch(`${API_BASE}/dashboard/escenarios`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        presupuesto_millones: values.presupuesto,
+        kits_emergencia: values.kits,
+        tecnicos: values.tecnicos,
+      }),
+    });
+    if (!response.ok) throw new Error("escenarios");
+    const data = await response.json();
+    const ctx = data.contexto || {};
+    const contextEl = document.getElementById("scenario-context");
+    if (contextEl) {
+      contextEl.textContent = ctx.municipio_mayor_demanda
+        ? `Foco territorial: ${ctx.municipio_mayor_demanda} (${ctx.zona_sismica_foco}). ${ctx.casos_registrados?.total || 0} casos registrados.`
+        : "Sin casos registrados. Carga datos demo para simular con contexto real.";
+    }
+    (data.escenarios || []).forEach((esc) => {
+      const el = document.getElementById(mapIds[esc.id]);
+      const detail = document.getElementById(`${mapIds[esc.id]}-detail`);
+      if (el) el.textContent = esc.impacto_principal;
+      if (detail) detail.textContent = esc.impacto_detalle || "";
+      const card = document.querySelector(`[data-scenario-id="${esc.id}"]`);
+      if (card) card.classList.toggle("scenario-card--recommended", esc.id === data.recomendacion);
+    });
+    const recEl = document.getElementById("scenario-recomendacion");
+    if (recEl && data.recomendacion) {
+      const esc = (data.escenarios || []).find((e) => e.id === data.recomendacion);
+      recEl.textContent = esc
+        ? `Recomendación según brecha principal: Escenario ${data.recomendacion} — ${esc.titulo}.`
+        : "";
+    }
+  } catch {
+    Object.entries(mapIds).forEach(([, id]) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = "Error al calcular";
+    });
+  }
 }
 
 function initMapaInteligente(mapa) {
@@ -1538,9 +1674,11 @@ function renderDashboard(data) {
       </div>
 
       <section class="dashboard-section">
-        <h2 class="dashboard-section__title">Alertas</h2>
+        <h2 class="dashboard-section__title">Alertas operativas</h2>
         ${renderAlertas(data.alertas)}
       </section>
+
+      <div id="resumen-ia-container"></div>
 
       <section class="dashboard-section">
         <h2 class="dashboard-section__title">Distribución por municipio</h2>
@@ -1580,7 +1718,7 @@ function renderDashboard(data) {
               <th>Estado</th>
               <th>Necesidad</th>
               <th>Solicitudes</th>
-              <th>Recursos</th>
+              <th>Recursos (unidades)</th>
               <th>Brecha</th>
             </tr>
           </thead>
@@ -1605,23 +1743,24 @@ function renderDashboard(data) {
         </table>
       </section>
 
-      <section class="dashboard-section">
-        <h2 class="dashboard-section__title">Recursos disponibles (demostrativos)</h2>
-        <div class="recursos-grid">
-          ${(data.recursos_disponibles || []).map((recurso) => `
-            <article class="ayuda-card">
-              <span class="ayuda-card__categoria">${escapeHtml(recurso.categoria)}</span>
-              <h4 class="ayuda-card__nombre">${escapeHtml(recurso.nombre)}</h4>
-              <p class="ayuda-card__descripcion">${escapeHtml(recurso.descripcion)}</p>
-            </article>
-          `).join("")}
-        </div>
-        <p class="ayudas__disclaimer">Recursos demostrativos. En producción se conectarían con fuentes oficiales.</p>
-      </section>
+      ${renderRecursosSection(data)}
 
       ${renderScenarioSimulator()}
     </div>
   `;
+}
+
+async function fetchResumenIA() {
+  const container = document.getElementById("resumen-ia-container");
+  if (!container) return;
+  try {
+    const response = await fetch(`${API_BASE}/ml/necesidades-emergentes`);
+    if (!response.ok) throw new Error();
+    const data = await response.json();
+    container.innerHTML = renderResumenIA(data.resumen_ia);
+  } catch {
+    container.innerHTML = renderResumenIA(null);
+  }
 }
 
 async function fetchDashboard() {
@@ -1636,6 +1775,7 @@ async function fetchDashboard() {
     if (isDashboardView()) {
       app.innerHTML = renderDashboard(state.dashboardData);
       bindDashboardActions();
+      fetchResumenIA();
     }
   } catch (error) {
     if (isDashboardView()) {
