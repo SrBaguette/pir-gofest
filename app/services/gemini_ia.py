@@ -170,20 +170,68 @@ Responde SOLO JSON:
 def resumir_alertas_ml1(alertas: list[dict], resumen: dict) -> dict | None:
     if not alertas and not resumen.get("total_afectados"):
         return None
-    prompt = f"""Resumen ejecutivo para alcalde (máx. 100 palabras).
 
-Alertas: {json.dumps(alertas[:5], ensure_ascii=False)}
-Total afectados: {resumen.get("total_afectados", 0)}
-Municipios: {json.dumps(resumen.get("por_municipio", {}), ensure_ascii=False)}
+    por_municipio = resumen.get("por_municipio", {})
+    top_municipios = sorted(por_municipio.items(), key=lambda x: x[1], reverse=True)[:5]
+    brechas_top = [
+        b for b in (resumen.get("brechas") or []) if b.get("brecha", 0) > 0
+    ][:4]
+    prioridades = (resumen.get("prioridades_entidad") or {}).get("prioridades", [])[:3]
+    perfil = resumen.get("perfil_demo") or "—"
+
+    contexto = {
+        "perfil_escenario": perfil,
+        "total_afectados": resumen.get("total_afectados", 0),
+        "municipios_top": dict(top_municipios),
+        "municipio_foco_brechas": resumen.get("municipio_foco_brechas"),
+        "alertas_ml1": alertas[:5],
+        "brechas_con_deficit": brechas_top,
+        "prioridades_entidad": prioridades,
+        "zonas_mapa": resumen.get("mapa_inteligente", {}).get("zonas_resumen", []),
+    }
+
+    prompt = f"""Resumen ejecutivo para alcalde (máx. 120 palabras).
+IMPORTANTE: menciona al menos 2 municipios concretos de los datos (nombres exactos).
+Explica qué está pasando EN CADA ZONA o municipio principal según el escenario cargado.
+
+Contexto territorial (JSON):
+{json.dumps(contexto, ensure_ascii=False)}
 
 Responde SOLO JSON:
 {{
-  "titulo": "headline corto",
-  "resumen_ejecutivo": "párrafo accionable",
-  "accion_recomendada": "acción concreta para hoy",
-  "nivel_alerta": "info" | "media" | "alta"
+  "titulo": "headline corto con municipio principal",
+  "resumen_ejecutivo": "párrafo accionable citando municipios y necesidades",
+  "accion_recomendada": "acción concreta para hoy nombrando municipio",
+  "nivel_alerta": "info" | "media" | "alta",
+  "municipios_destacados": ["Municipio1", "Municipio2", "Municipio3"],
+  "perfil_interpretado": "a|b|manual"
 }}"""
-    return _extraer_json(_generar(prompt, max_tokens=600) or "")
+
+    resultado = _extraer_json(_generar(prompt, max_tokens=700) or "")
+    if resultado:
+        return resultado
+
+    # Fallback sin Gemini: resumen legible con municipios reales
+    if not top_municipios:
+        return None
+    nombres = [m for m, _ in top_municipios[:3]]
+    return {
+        "titulo": f"Concentración en {nombres[0]}",
+        "resumen_ejecutivo": (
+            f"Escenario {perfil.upper()}: {resumen.get('total_afectados', 0)} casos registrados. "
+            f"Municipios con más solicitudes: {', '.join(nombres)}. "
+            f"Revisar brechas de cupos en {resumen.get('municipio_foco_brechas') or nombres[0]}."
+        ),
+        "accion_recomendada": (
+            prioridades[0]["accion_sugerida"]
+            if prioridades
+            else f"Priorizar atención en {nombres[0]}."
+        ),
+        "nivel_alerta": "media",
+        "municipios_destacados": nombres,
+        "perfil_interpretado": perfil,
+        "generado_por": "reglas_fallback",
+    }
 
 
 def enriquecer_diagnostico(datos: dict, resultado: dict, pasaporte: dict) -> dict:

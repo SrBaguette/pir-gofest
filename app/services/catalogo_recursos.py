@@ -11,7 +11,7 @@ from __future__ import annotations
 ZONAS_SISMICAS = {
     "Valle Norte": ["Palmira", "Buga", "Cartago", "Tuluá"],
     "Valle Sur": ["Cali", "Yumbo", "Jamundí", "Florida"],
-    "Cauca": ["Popayán", "Pasto"],
+    "Cauca": ["Popayán", "Quibdó", "Santander de Quilichao", "Puerto Tejada"],
 }
 
 MUNICIPIO_A_ZONA: dict[str, str] = {}

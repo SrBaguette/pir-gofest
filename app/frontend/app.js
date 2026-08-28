@@ -90,6 +90,9 @@ const state = {
   evidencia: "",
   resultado: null,
   pasaporte: null,
+  ia: null,
+  diagnostico: null,
+  nombre: "",
   pasaporteLookupId: "",
   showAyudas: true,
   dashboardData: null,
@@ -143,6 +146,7 @@ function render() {
   }
 
   app.classList.remove("main--dashboard");
+  app.classList.toggle("main--persona-home", state.screen === "result");
   stopDashboardPolling();
 
   if (state.screen === "welcome") {
@@ -183,6 +187,7 @@ function render() {
   if (state.screen === "result") {
     app.innerHTML = renderResult();
     bindResult();
+    return;
   }
 }
 
@@ -427,13 +432,24 @@ function getStepContent() {
   return getStepIngresos();
 }
 
+function renderStepMunicipioNombre() {
+  return `
+    <div class="field-stack">
+      <label class="input-label" for="input-municipio">Municipio</label>
+      <input type="text" class="input-text" id="input-municipio" placeholder="Ejemplo: Cali" value="${escapeHtml(state.municipio)}">
+      <label class="input-label" for="input-nombre">Tu nombre (opcional)</label>
+      <input type="text" class="input-text" id="input-nombre" placeholder="Ejemplo: María" value="${escapeHtml(state.nombre)}">
+    </div>
+  `;
+}
+
 function getStepAyudaInmediata() {
   switch (state.step) {
     case 1:
       return {
         title: "¿En qué municipio ocurrió la afectación?",
-        hint: "Escribe el municipio donde necesitas apoyo.",
-        body: `<input type="text" class="input-text" id="input-municipio" placeholder="Ejemplo: Jojutla" value="${escapeHtml(state.municipio)}">`,
+        hint: "Escribe el municipio. Tu nombre es opcional para personalizar tu plan.",
+        body: renderStepMunicipioNombre(),
       };
     case 2:
       return {
@@ -472,8 +488,8 @@ function getStepVivienda() {
     case 1:
       return {
         title: "¿En qué municipio está tu vivienda?",
-        hint: "Escribe el municipio.",
-        body: `<input type="text" class="input-text" id="input-municipio" placeholder="Ejemplo: Jojutla" value="${escapeHtml(state.municipio)}">`,
+        hint: "Escribe el municipio. Tu nombre es opcional para personalizar tu plan.",
+        body: renderStepMunicipioNombre(),
       };
     case 2:
       return {
@@ -518,17 +534,8 @@ function getStepIngresos() {
     case 1:
       return {
         title: "¿En qué municipio ocurrió la afectación?",
-        hint: "Ruta: Recuperar ingresos. Indica dónde vives o dónde opera tu actividad económica.",
-        body: `
-          <input
-            type="text"
-            class="input-text"
-            id="input-municipio"
-            placeholder="Ejemplo: Jojutla"
-            value="${escapeHtml(state.municipio)}"
-            autocomplete="address-level2"
-          >
-        `,
+        hint: "Ruta: Recuperar ingresos. Indica dónde opera tu actividad. Tu nombre es opcional.",
+        body: renderStepMunicipioNombre(),
       };
 
     case 2:
@@ -626,53 +633,219 @@ function renderLoading() {
   `;
 }
 
-function renderResult() {
-  const { que_hacer_primero, ruta, ayudas = [], barrera_principal, ruta_nombre } = state.resultado;
-  const pasaporte = state.pasaporte;
+function buildPersonaResumenIA(pasaporte, resultado, ia) {
+  const rec = ia?.recomendacion_ia;
+  const conf = ia?.confianza_ia;
+  if (rec?.explicacion) {
+    const extra = rec.ruta_recuperacion ? ` ${rec.ruta_recuperacion}` : "";
+    return `${rec.explicacion}${extra}`;
+  }
+  if (conf?.motivos?.length) {
+    return conf.motivos.join(". ") + (conf.accion_sugerida ? ` ${conf.accion_sugerida}` : "");
+  }
+  const municipio = pasaporte?.municipio || "tu municipio";
+  const ruta = pasaporte?.ruta_nombre || resultado?.ruta_nombre || "recuperación";
+  const nAyudas = (resultado?.ayudas || []).length;
+  return (
+    `Según tu diagnóstico, mapeamos tu **Ruta de ${ruta}** en ${municipio}. ` +
+    `Hay ${nAyudas} programas compatibles con tu situación. ` +
+    `Prioridad: ${resultado?.que_hacer_primero || "revisar ayudas disponibles"}.`
+  ).replace(/\*\*/g, "");
+}
+
+function buildPersonaDiagnosticoFields(pasaporte, resultado) {
+  const diag = state.diagnostico || {};
+  let afectacion = pasaporte?.danos?.length
+    ? pasaporte.danos.join(", ")
+    : pasaporte?.necesidades?.join(", ") || "—";
+  if (diag.tipo_afectacion?.length) {
+    afectacion = diag.tipo_afectacion.join(", ");
+  }
+  if (diag.necesidad) {
+    afectacion = diag.necesidad;
+  }
+  let urgencia = diag.urgencia || pasaporte?.prioridad_etiqueta || "—";
+  if (typeof urgencia === "string") {
+    urgencia = urgencia.charAt(0).toUpperCase() + urgencia.slice(1);
+  }
+  if (pasaporte?.prioridad_nivel === "rojo" && !diag.urgencia) {
+    urgencia = "Crítica";
+  }
+  return [
+    { label: "Ruta elegida", value: pasaporte?.ruta_nombre || resultado?.ruta_nombre || "—" },
+    { label: "Ubicación afectada", value: `${pasaporte?.municipio || "—"}, Valle del Cauca` },
+    { label: "Tipo de afectación", value: afectacion },
+    { label: "Nivel de urgencia", value: urgencia, critico: pasaporte?.prioridad_nivel === "rojo" },
+  ];
+}
+
+function renderPersonaStepper(pasaporte) {
+  const progreso = pasaporte?.progreso || 0;
+  const pasoActual = progreso >= 100 ? 5 : progreso > 0 ? 3 : 2;
+  const pasos = [
+    { titulo: "Diagnóstico inicial", detalle: "Completado vía web" },
+    { titulo: "Emisión de pasaporte", detalle: pasaporte ? `ID ${pasaporte.id} asignado` : "Pendiente" },
+    { titulo: "Selección de ayudas", detalle: "Revise los recursos compatibles" },
+    { titulo: "Verificación de entidad", detalle: "Validación institucional" },
+    { titulo: "Recepción de recursos", detalle: "Entrega de apoyos" },
+  ];
 
   return `
-    <section class="card">
-      <p class="result__label">Resultado del diagnóstico</p>
-      <h2 class="result__title">${escapeHtml(ruta_nombre || "Tu ruta de recuperación")}</h2>
+    <ol class="persona-stepper">
+      ${pasos.map((paso, index) => {
+        const num = index + 1;
+        let cls = "persona-stepper__item";
+        if (num < pasoActual) cls += " persona-stepper__item--done";
+        else if (num === pasoActual) cls += " persona-stepper__item--active";
+        return `
+          <li class="${cls}">
+            <span class="persona-stepper__marker">${num < pasoActual ? "✓" : num}</span>
+            <div>
+              <p class="persona-stepper__title">${escapeHtml(paso.titulo)}</p>
+              <p class="persona-stepper__detail">${escapeHtml(paso.detalle)}</p>
+            </div>
+          </li>
+        `;
+      }).join("")}
+    </ol>
+  `;
+}
 
-      ${pasaporte ? `
-        <div class="semaforo-row">
-          ${renderSemaforo(pasaporte.prioridad_nivel, `Prioridad ${pasaporte.prioridad_etiqueta}`)}
-          ${renderSemaforo(pasaporte.confianza_nivel, pasaporte.confianza_etiqueta)}
-        </div>
-      ` : ""}
+function renderPersonaRecursos(ayudas) {
+  const items = ayudas || [];
+  const cards = items.length > 0
+    ? items.map((ayuda, index) => `
+        <article class="persona-recurso">
+          <div class="persona-recurso__icon" aria-hidden="true">${index === 0 ? "💼" : index === 1 ? "🏠" : "🍽"}</div>
+          <div class="persona-recurso__body">
+            <h4 class="persona-recurso__nombre">${escapeHtml(ayuda.nombre)}</h4>
+            <p class="persona-recurso__desc">${escapeHtml(ayuda.descripcion)}</p>
+            <div class="persona-recurso__tags">
+              <span class="persona-recurso__tag">${escapeHtml(ayuda.categoria)}</span>
+              <span class="persona-recurso__tag persona-recurso__tag--ok">Cupos demo</span>
+            </div>
+          </div>
+          <button type="button" class="btn ${index === 0 ? "btn--primary" : "btn--secondary"} btn--sm persona-recurso__btn" data-recurso-demo="${index}">
+            ${index === 0 ? "Solicitar" : "Ver detalles"}
+          </button>
+        </article>
+      `).join("")
+    : `<p class="ayudas__empty">No encontramos recursos compatibles en esta versión demostrativa.</p>`;
 
-      <div class="result__priority">
-        <p class="result__priority-label">Acción prioritaria</p>
-        <p class="result__priority-text">${escapeHtml(que_hacer_primero)}</p>
+  return `
+    <section class="persona-recursos" id="seccion-ayudas">
+      <div class="persona-recursos__header">
+        <h3 class="persona-section__title">Recursos compatibles</h3>
+        <span class="persona-recursos__count">${items.length} encontrados</span>
       </div>
+      <div class="persona-recursos__list">${cards}</div>
+      <p class="ayudas__disclaimer">Recursos demostrativos. En producción se conectarían con fuentes oficiales verificadas.</p>
+    </section>
+  `;
+}
 
-      ${barrera_principal ? `
-        <div class="result__priority result__priority--barrera">
-          <p class="result__priority-label">Barrera principal</p>
-          <p class="result__priority-text">${escapeHtml(barrera_principal)}</p>
-        </div>
-      ` : ""}
-
-      <h3 class="result__section-title">Pasos de tu ruta</h3>
-      <ol class="route-steps">
-        ${ruta.map((paso, index) => `
-          <li class="route-step">
-            <span class="route-step__number">${String(index + 1).padStart(2, "0")}</span>
-            <p class="route-step__text">${escapeHtml(paso)}</p>
+function renderPersonaAcciones(pasaporte) {
+  if (!pasaporte?.ruta?.length) return "";
+  const completadas = new Set(pasaporte.acciones_completadas || []);
+  return `
+    <section class="persona-acciones">
+      <h3 class="persona-section__title">Acciones de tu ruta</h3>
+      <ul class="acciones-list">
+        ${pasaporte.ruta.map((accion, index) => `
+          <li>
+            <label class="accion-item ${completadas.has(index) ? "accion-item--done" : ""}">
+              <input type="checkbox" data-accion="${index}" ${completadas.has(index) ? "checked disabled" : ""}>
+              <span>${escapeHtml(accion)}</span>
+            </label>
           </li>
         `).join("")}
-      </ol>
-
-      ${pasaporte ? renderPasaporte(pasaporte) : ""}
-      ${renderAyudas(ayudas)}
-
-      <div class="result__actions">
-        <button type="button" class="btn btn--secondary" id="btn-restart">
-          Nuevo diagnóstico
-        </button>
-      </div>
+      </ul>
     </section>
+  `;
+}
+
+function renderResult() {
+  const { que_hacer_primero, ayudas = [] } = state.resultado || {};
+  const pasaporte = state.pasaporte;
+  const nombre = state.nombre.trim() || "María";
+  const resumenIA = buildPersonaResumenIA(pasaporte, state.resultado, state.ia);
+  const camposDiag = buildPersonaDiagnosticoFields(pasaporte, state.resultado);
+
+  return `
+    <div class="persona-home">
+      <header class="persona-home__hero">
+        <div class="persona-home__badges">
+          ${pasaporte ? renderSemaforo(pasaporte.prioridad_nivel, `Prioridad ${pasaporte.prioridad_etiqueta}`) : ""}
+          ${pasaporte ? `<span class="persona-home__id">ID: ${escapeHtml(pasaporte.id)}</span>` : ""}
+        </div>
+        <div class="persona-home__hero-row">
+          <div>
+            <h1 class="persona-home__title">Hola, ${escapeHtml(nombre)}</h1>
+            <p class="persona-home__subtitle">Este es tu plan de acción personalizado para la recuperación.</p>
+          </div>
+          <div class="persona-home__hero-actions">
+            <button type="button" class="btn btn--secondary btn--sm" id="btn-descargar-pdf">Descargar PDF</button>
+            <button type="button" class="btn btn--accent btn--sm" id="btn-compartir">Compartir</button>
+          </div>
+        </div>
+      </header>
+
+      <div class="persona-home__grid">
+        <div class="persona-home__main">
+          <section class="persona-ai-card">
+            <h2 class="persona-ai-card__title">✦ Resumen ejecutivo (IA)</h2>
+            <p class="persona-ai-card__text">${escapeHtml(resumenIA)}</p>
+            ${state.ia?.activo ? `<p class="persona-ai-card__meta">${state.ia.modelo ? `Gemini · ${escapeHtml(state.ia.modelo)}` : "Análisis asistido por IA"}</p>` : `<p class="persona-ai-card__meta">Resumen basado en reglas del sistema (Gemini inactivo).</p>`}
+          </section>
+
+          <section class="persona-diagnostico-card">
+            <h3 class="persona-section__title">Diagnóstico actual</h3>
+            <div class="persona-diagnostico-grid">
+              ${camposDiag.map((c) => `
+                <div class="persona-diagnostico-item">
+                  <span class="persona-diagnostico-item__label">${escapeHtml(c.label)}</span>
+                  <span class="persona-diagnostico-item__value ${c.critico ? "persona-diagnostico-item__value--critico" : ""}">${escapeHtml(c.value)}</span>
+                </div>
+              `).join("")}
+            </div>
+          </section>
+
+          ${renderPersonaRecursos(ayudas)}
+
+          ${pasaporte ? renderPersonaAcciones(pasaporte) : ""}
+
+          <div class="persona-home__footer-actions">
+            <button type="button" class="btn btn--secondary" id="btn-restart">Nuevo diagnóstico</button>
+          </div>
+        </div>
+
+        <aside class="persona-home__aside">
+          <section class="persona-aside-card">
+            <h3 class="persona-section__title">Su progreso</h3>
+            ${pasaporte ? renderPersonaStepper(pasaporte) : ""}
+            ${pasaporte ? `
+              <div class="persona-progreso-bar">
+                <div class="persona-progreso-bar__fill" style="width: ${pasaporte.progreso}%"></div>
+              </div>
+              <p class="persona-progreso-bar__label">${pasaporte.progreso}% de la ruta completada</p>
+            ` : ""}
+          </section>
+
+          <section class="persona-aside-card persona-aside-card--help">
+            <p class="persona-aside-help__title">¿Necesita asistencia extra?</p>
+            <p class="persona-aside-help__text">Contacte a un asesor territorial para validar su caso.</p>
+            <button type="button" class="btn btn--secondary btn--wide btn--sm" id="btn-contactar-asesor">Contactar asesor</button>
+          </section>
+
+          ${que_hacer_primero ? `
+            <section class="persona-aside-card">
+              <h3 class="persona-section__title">Acción prioritaria</h3>
+              <p class="persona-priority-text">${escapeHtml(que_hacer_primero)}</p>
+            </section>
+          ` : ""}
+        </aside>
+      </div>
+    </div>
   `;
 }
 
@@ -791,6 +964,13 @@ function bindQuiz() {
       state.error = "";
     });
     municipioInput.focus();
+  }
+
+  const nombreInput = document.getElementById("input-nombre");
+  if (nombreInput) {
+    nombreInput.addEventListener("input", (e) => {
+      state.nombre = e.target.value;
+    });
   }
 
   const personasInput = document.getElementById("input-personas");
@@ -938,6 +1118,9 @@ function resetFormState() {
     evidencia: "",
     resultado: null,
     pasaporte: null,
+    ia: null,
+    diagnostico: null,
+    nombre: "",
     showAyudas: true,
     error: "",
     loading: false,
@@ -947,9 +1130,33 @@ function resetFormState() {
 function bindResult() {
   bindPasaporteActions();
 
-  document.getElementById("btn-restart").addEventListener("click", () => {
+  document.getElementById("btn-restart")?.addEventListener("click", () => {
     resetFormState();
     render();
+  });
+
+  document.getElementById("btn-descargar-pdf")?.addEventListener("click", () => {
+    showToast("Descarga PDF disponible en la versión de producción.");
+  });
+
+  document.getElementById("btn-compartir")?.addEventListener("click", () => {
+    const id = state.pasaporte?.id || "";
+    const text = id ? `Mi Pasaporte de Recuperación: ${id}` : "Pasaporte Inteligente de Recuperación";
+    if (navigator.share) {
+      navigator.share({ title: "PIR", text }).catch(() => showToast(text));
+    } else {
+      showToast(text);
+    }
+  });
+
+  document.getElementById("btn-contactar-asesor")?.addEventListener("click", () => {
+    showToast("Un asesor territorial revisará su caso (demo).");
+  });
+
+  document.querySelectorAll("[data-recurso-demo]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      showToast("Solicitud registrada en modo demostrativo.");
+    });
   });
 }
 
@@ -1163,6 +1370,8 @@ async function submitDiagnostico() {
     const data = await response.json();
     state.resultado = data.resultado;
     state.pasaporte = data.pasaporte;
+    state.ia = data.ia || null;
+    state.diagnostico = data.diagnostico || null;
     state.screen = "result";
     render();
   } catch (error) {
@@ -1276,31 +1485,53 @@ function renderDashboardView() {
 }
 
 function bindDashboardActions() {
-  const seedBtn = document.getElementById("btn-seed-demo");
-  if (seedBtn && seedBtn.dataset.bound !== "1") {
-    seedBtn.dataset.bound = "1";
-    seedBtn.addEventListener("click", async () => {
-      const btn = document.getElementById("btn-seed-demo");
-      if (!btn) return;
+  document.querySelectorAll("[data-seed-perfil]").forEach((btn) => {
+    if (btn.dataset.bound === "1") return;
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", async () => {
+      const perfil = btn.dataset.seedPerfil || "a";
+      const label = btn.dataset.seedLabel || "Cargar datos";
       btn.disabled = true;
       btn.textContent = "Generando…";
       try {
-        const response = await fetch(`${API_BASE}/demo/seed?cantidad=150&reemplazar=true`, { method: "POST" });
+        const response = await fetch(
+          `${API_BASE}/demo/seed?cantidad=250&reemplazar=true&perfil=${encodeURIComponent(perfil)}`,
+          { method: "POST" },
+        );
         if (!response.ok) throw new Error("No se pudo generar datos demo.");
         const result = await response.json();
-        showToast(result.mensaje);
+        showToast(result.mensaje || `Escenario ${perfil.toUpperCase()} cargado.`);
         await fetchDashboard();
       } catch (error) {
         showToast(error.message || "Error al cargar demo.");
       } finally {
-        const refreshed = document.getElementById("btn-seed-demo");
+        const refreshed = document.querySelector(`[data-seed-perfil="${perfil}"]`);
         if (refreshed) {
           refreshed.disabled = false;
-          refreshed.textContent = "Cargar datos demo (150)";
+          refreshed.textContent = label;
         }
       }
     });
-  }
+  });
+
+  document.querySelectorAll("[data-dash-section]").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      const sectionId = link.dataset.dashSection;
+      document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      document.querySelectorAll(".dashboard-sidebar__link").forEach((l) => {
+        l.classList.remove("dashboard-sidebar__link--active");
+      });
+      link.classList.add("dashboard-sidebar__link--active");
+    });
+  });
+
+  document.querySelector("[data-nav-persona]")?.addEventListener("click", (event) => {
+    event.preventDefault();
+    stopDashboardPolling();
+    window.location.hash = "";
+    render();
+  });
 
   if (state.dashboardData?.mapa_inteligente) {
     initMapaInteligente(state.dashboardData.mapa_inteligente);
@@ -1350,11 +1581,21 @@ function renderResumenIA(resumen) {
   const accion = resumen.accion_recomendada
     ? `<p class="resumen-ia__accion">→ ${escapeHtml(resumen.accion_recomendada)}</p>`
     : "";
+  const municipios = Array.isArray(resumen.municipios_destacados) && resumen.municipios_destacados.length > 0
+    ? `<p class="resumen-ia__municipios">
+        <span class="resumen-ia__municipios-label">Municipios citados por Gemini:</span>
+        ${resumen.municipios_destacados.map((m) => `<span class="demo-badge demo-badge--mun">${escapeHtml(m)}</span>`).join(" ")}
+      </p>`
+    : "";
+  const perfilIa = resumen.perfil_interpretado
+    ? `<span class="demo-badge demo-badge--ia">Gemini leyó escenario ${escapeHtml(String(resumen.perfil_interpretado).toUpperCase())}</span>`
+    : "";
   return `
     <section class="dashboard-section dashboard-section--ia">
       <h2 class="dashboard-section__title">Resumen ejecutivo (IA — Gemini)</h2>
-      <p class="ayudas__intro">Narrativa opcional sobre patrones ya detectados por ML1/reglas. No genera alertas nuevas.</p>
-      <div class="resumen-ia">${titulo}${escapeHtml(texto)}${accion}</div>
+      <p class="ayudas__intro">Narrativa opcional sobre patrones ya detectados por ML1/reglas. Carga escenario A o B y compara qué municipios cita la IA.</p>
+      ${perfilIa ? `<div class="resumen-ia__meta">${perfilIa}</div>` : ""}
+      <div class="resumen-ia">${titulo}${escapeHtml(texto)}${accion}${municipios}</div>
     </section>
   `;
 }
@@ -1382,15 +1623,28 @@ function renderMlNecesidades(alertas) {
 
 function renderMapaSection(mapa) {
   if (!mapa) return "";
+  const zonas = mapa.zonas_resumen || [];
   return `
     <section class="dashboard-section">
       <h2 class="dashboard-section__title">Mapa inteligente de afectación (ML2)</h2>
       <p class="ayudas__intro">${escapeHtml(mapa.resumen || "")}</p>
+      ${zonas.length > 0 ? `
+        <div class="mapa-zonas-grid">
+          ${zonas.map((z) => `
+            <article class="mapa-zona-card mapa-zona-card--${escapeHtml(z.nivel)}">
+              ${renderSemaforo(z.nivel, z.prioridad_label || z.nivel)}
+              <h3 class="mapa-zona-card__title">${escapeHtml(z.zona)}</h3>
+              <p class="mapa-zona-card__stat"><strong>${z.total}</strong> casos · ${z.municipios_activos} municipios</p>
+              <p class="mapa-zona-card__nec">Necesidad dominante: ${escapeHtml(z.necesidad_dominante || "—")}</p>
+            </article>
+          `).join("")}
+        </div>
+      ` : ""}
       <div id="mapa-afectacion" class="mapa-container" role="img" aria-label="Mapa de clusters de afectación"></div>
       <div class="mapa-leyenda">
-        <span>${renderSemaforo("rojo", "Hotspot alto")}</span>
-        <span>${renderSemaforo("amarillo", "Concentración media")}</span>
-        <span>${renderSemaforo("verde", "Baja concentración")}</span>
+        <span>${renderSemaforo("rojo", "Valle Sur — prioridad alta")}</span>
+        <span>${renderSemaforo("amarillo", "Valle Norte — prioridad media")}</span>
+        <span>${renderSemaforo("verde", "Cauca — prioridad baja")}</span>
       </div>
       ${(mapa.subclusters || []).length > 0 ? `
         <h3 class="result__section-title" style="margin-top:1rem">Subclusters detectados</h3>
@@ -1457,20 +1711,54 @@ function renderRecursosSection(data) {
   `;
 }
 
+function renderOfertaDemandaBanner(data) {
+  const oferta = data.oferta_meta || {};
+  const demanda = data.demanda_meta || {};
+  const mun = data.municipio_foco_brechas;
+
+  return `
+    <section class="dashboard-section oferta-demanda-banner">
+      <h2 class="dashboard-section__title">Oferta vs demanda</h2>
+      <div class="oferta-demanda-grid">
+        <article class="oferta-demanda-card oferta-demanda-card--demanda">
+          <h3>Demanda (real)</h3>
+          <p class="oferta-demanda-card__stat"><strong>${data.total_afectados ?? 0}</strong> personas registradas</p>
+          <p>${escapeHtml(demanda.mensaje || "Pasaportes y diagnósticos del sistema.")}</p>
+          ${mun ? `<p><strong>Municipio con más casos:</strong> ${escapeHtml(mun)}</p>` : ""}
+        </article>
+        <article class="oferta-demanda-card oferta-demanda-card--oferta">
+          <h3>Oferta (demo)</h3>
+          <p class="oferta-demanda-card__stat">
+            <strong>${oferta.total_programas ?? 0}</strong> programas ·
+            <strong>${oferta.total_cupos ?? 0}</strong> cupos
+          </p>
+          <p>${escapeHtml(oferta.mensaje || "")}</p>
+          <p class="oferta-demanda-card__hint">${escapeHtml(oferta.como_se_calcula || "")}</p>
+        </article>
+      </div>
+      <p class="ayudas__disclaimer">${escapeHtml(oferta.produccion || "")}</p>
+    </section>
+  `;
+}
+
 function renderBrechasSection(data) {
   const brechas = data.brechas || [];
   const resumen = data.brechas_resumen || {};
   const maxBrecha = Math.max(1, ...brechas.map((b) => Number(b.brecha) || 0));
+  const mun = data.municipio_foco_brechas;
+  const titulo = mun
+    ? `Brechas en ${mun} (solicitudes vs cupos del municipio)`
+    : "Brechas: ¿alcanzan los cupos?";
 
   return `
     <section class="dashboard-section">
-      <h2 class="dashboard-section__title">Brechas: ¿alcanzan los cupos?</h2>
+      <h2 class="dashboard-section__title">${escapeHtml(titulo)}</h2>
       <div class="brechas-glosario">
-        <p><strong>¿Qué es una brecha?</strong> Compara cuántas personas pidieron una necesidad vs cuántos <em>cupos demostrativos</em> hay en el catálogo para atenderla.</p>
+        <p><strong>¿Qué comparamos?</strong> Personas que pidieron una necesidad <em>en ese municipio</em> vs cupos del catálogo demo <em>en ese mismo municipio</em>.</p>
         <ul>
-          <li><strong>Solicitudes</strong> = personas que reportaron esa necesidad en su diagnóstico.</li>
-          <li><strong>Cupos disponibles</strong> = unidades del programa equivalente en el catálogo (150 recursos por zona).</li>
-          <li><strong>Faltan</strong> = solicitudes − cupos (si es mayor que cero, hay déficit).</li>
+          <li><strong>Solicitudes</strong> = pasaportes con esa necesidad en el municipio foco.</li>
+          <li><strong>Cupos</strong> = suma de unidades del programa equivalente en ese municipio.</li>
+          <li><strong>Faltan</strong> = solicitudes − cupos (déficit local).</li>
         </ul>
         ${resumen.mensaje ? `<p class="brechas-glosario__resumen">${escapeHtml(resumen.mensaje)}</p>` : ""}
       </div>
@@ -1507,7 +1795,7 @@ function renderBrechasSection(data) {
                   <td colspan="7"><em>${escapeHtml(brecha.explicacion || "")}</em></td>
                 </tr>
               `).join("")
-            : `<tr><td colspan="7">Sin datos. Carga los 150 casos demo para ver brechas.</td></tr>`}
+            : `<tr><td colspan="7">Sin datos. Carga los 250 casos demo para ver brechas.</td></tr>`}
         </tbody>
       </table>
     </section>
@@ -1576,28 +1864,47 @@ function initMapaInteligente(mapa) {
 
   const colores = { rojo: "#b42318", amarillo: "#92610a", verde: "#157a3a" };
 
+  (mapa.zonas_resumen || []).forEach((zona) => {
+    L.circle([zona.lat, zona.lng], {
+      radius: 22000 + zona.total * 120,
+      color: colores[zona.nivel] || colores.verde,
+      fillColor: colores[zona.nivel] || colores.verde,
+      fillOpacity: 0.08,
+      weight: 2,
+      dashArray: "6 4",
+    })
+      .bindPopup(
+        `<strong>${zona.zona}</strong><br>${zona.total} casos<br>`
+        + `<em>${zona.prioridad_label || ""}</em>`
+      )
+      .addTo(map);
+  });
+
   (mapa.clusters || []).forEach((cluster) => {
-    const radio = Math.min(28, 8 + cluster.total * 1.5);
+    const radio = Math.min(36, 10 + cluster.total * 1.2);
     L.circleMarker([cluster.lat, cluster.lng], {
       radius: radio,
       color: colores[cluster.nivel] || colores.verde,
       fillColor: colores[cluster.nivel] || colores.verde,
-      fillOpacity: 0.55,
-      weight: 2,
+      fillOpacity: cluster.nivel === "rojo" ? 0.72 : 0.55,
+      weight: cluster.nivel === "rojo" ? 3 : 2,
     })
       .bindPopup(
-        `<strong>${cluster.etiqueta}</strong><br>${cluster.descripcion}<br>`
+        `<strong>${cluster.etiqueta}</strong><br>`
+        + `Zona: ${cluster.zona_sismica || "—"}<br>`
+        + `${cluster.descripcion}<br>`
         + `<em>${cluster.recuperables} recuperables</em>`
       )
       .addTo(map);
   });
 
   (mapa.subclusters || []).forEach((sub) => {
+    const subColor = colores[sub.nivel] || "#0d3b66";
     L.circleMarker([sub.lat, sub.lng], {
-      radius: 6,
-      color: "#0d3b66",
-      fillColor: "#0d3b66",
-      fillOpacity: 0.8,
+      radius: 7,
+      color: subColor,
+      fillColor: subColor,
+      fillOpacity: 0.85,
       weight: 1,
     })
       .bindPopup(`<strong>${sub.etiqueta}</strong><br>${sub.descripcion}`)
@@ -1621,6 +1928,37 @@ function renderTendenciaBanner(tendencia) {
   `;
 }
 
+function renderDashboardSidebar(data) {
+  const foco = data.municipio_foco_brechas || data.prioridades_entidad?.municipio_foco || "Valle del Cauca";
+  const navItems = [
+    { id: "sec-resumen", label: "Resumen" },
+    { id: "sec-ml1", label: "ML1 Necesidades" },
+    { id: "sec-mapa", label: "Mapa territorial" },
+    { id: "sec-oferta", label: "Oferta vs demanda" },
+    { id: "sec-prioridades", label: "Priorización" },
+    { id: "sec-brechas", label: "Brechas" },
+    { id: "sec-municipios", label: "Municipios" },
+  ];
+
+  return `
+    <aside class="dashboard-sidebar">
+      <div class="dashboard-sidebar__entity">
+        <p class="dashboard-sidebar__entity-label">Entidades territoriales</p>
+        <p class="dashboard-sidebar__entity-name">Alcaldía de ${escapeHtml(foco)}</p>
+        <p class="dashboard-sidebar__entity-meta">PIR · Post-emergencia v1.0</p>
+      </div>
+      <nav class="dashboard-sidebar__nav" aria-label="Secciones del panel">
+        ${navItems.map((item, index) => `
+          <a href="#${item.id}" class="dashboard-sidebar__link ${index === 2 ? "dashboard-sidebar__link--active" : ""}" data-dash-section="${item.id}">
+            ${escapeHtml(item.label)}
+          </a>
+        `).join("")}
+      </nav>
+      <a href="#" class="btn btn--secondary btn--wide btn--sm dashboard-sidebar__back" data-nav-persona>Volver a Persona</a>
+    </aside>
+  `;
+}
+
 function renderDashboard(data) {
   const t = data.tendencias || {};
   const metrics = [
@@ -1634,83 +1972,102 @@ function renderDashboard(data) {
     nombre, total, nivel: "verde",
   }));
 
+  const perfilDemo = data.perfil_demo;
+  const perfilBadge = perfilDemo
+    ? `<span class="demo-badge demo-badge--${escapeHtml(perfilDemo)}">Escenario ${escapeHtml(String(perfilDemo).toUpperCase())} activo</span>`
+    : "";
+
   return `
-    <div class="dashboard">
-      <div class="dashboard__header">
-        <div>
-          <h1 class="dashboard__title">Panel territorial</h1>
-          <p class="dashboard__subtitle">Vista para alcaldías y entidades: qué piden las personas, dónde hay déficit de cupos y qué hacer primero.</p>
-          ${state.dashboardUpdatedAt ? `<p class="dashboard__updated">Actualizado: ${state.dashboardUpdatedAt}</p>` : ""}
-        </div>
-        <div class="dashboard__actions">
-          <button type="button" class="btn btn--secondary btn--sm" id="btn-seed-demo">Cargar datos demo (150)</button>
-        </div>
-      </div>
+    <div class="dashboard-layout">
+      ${renderDashboardSidebar(data)}
+      <div class="dashboard-main">
+        <div class="dashboard" id="sec-resumen">
+          <div class="dashboard__header">
+            <div>
+              <p class="dashboard__eyebrow">Entidades territoriales</p>
+              <h1 class="dashboard__title">Panel territorial ${perfilBadge}</h1>
+              <p class="dashboard__subtitle">Vista para alcaldías: qué piden las personas, dónde hay déficit de cupos y qué hacer primero.</p>
+              ${perfilDemo === "a"
+                ? `<p class="dashboard__hint">Escenario A: hotspot en <strong>Cali</strong> (financiamiento).</p>`
+                : perfilDemo === "b"
+                  ? `<p class="dashboard__hint">Escenario B: hotspot en <strong>Popayán, Quibdó y Palmira</strong> (corredor Valle–Pacífico, sin Cali).</p>`
+                  : ""}
+              ${state.dashboardUpdatedAt ? `<p class="dashboard__updated">Actualizado: ${state.dashboardUpdatedAt}</p>` : ""}
+            </div>
+            <div class="dashboard__actions">
+              <button type="button" class="btn btn--secondary btn--sm" data-seed-perfil="a" data-seed-label="Cargar datos A (Cali)">Cargar datos A (Cali)</button>
+              <button type="button" class="btn btn--primary btn--sm" data-seed-perfil="b" data-seed-label="Cargar datos B (Popayán/Quibdó)">Cargar datos B (Popayán/Quibdó)</button>
+            </div>
+          </div>
 
-      ${renderTendenciaBanner(data.tendencia_emergente)}
+          ${renderTendenciaBanner(data.tendencia_emergente)}
 
-      <section class="dashboard-section">
-        <h2 class="dashboard-section__title">ML1 — Necesidades emergentes</h2>
-        ${renderMlNecesidades(data.ml_necesidades_emergentes)}
-      </section>
-
-      ${renderMapaSection(data.mapa_inteligente)}
-
-      <div class="dashboard-grid">
-        ${metrics.map((metric) => {
-          const trend = formatTrend(metric.trend ?? 0);
-          return `
-            <article class="metric-card">
-              <p class="metric-card__label">${metric.label}</p>
-              <p class="metric-card__value">${metric.value}</p>
-              <p class="metric-card__trend ${trend.className}">${trend.text}</p>
-            </article>
-          `;
-        }).join("")}
-      </div>
-
-      <section class="dashboard-section">
-        <h2 class="dashboard-section__title">Alertas operativas</h2>
-        ${renderAlertas(data.alertas)}
-      </section>
-
-      <div id="resumen-ia-container"></div>
-
-      ${renderPanelPrioridades(data.prioridades_entidad)}
-
-      ${renderBrechasSection(data)}
-
-      <section class="dashboard-section">
-        <h2 class="dashboard-section__title">Distribución por municipio</h2>
-        <div class="municipio-cards">
-          ${municipios.length > 0
-            ? municipios.map((m) => `
-                <article class="municipio-card municipio-card--${escapeHtml(m.nivel || "verde")}">
-                  <p class="municipio-card__name">${escapeHtml(m.nombre)}</p>
-                  <p class="municipio-card__count">${m.total}</p>
-                  ${renderSemaforo(m.nivel, m.nivel === "rojo" ? "Alta concentración" : m.nivel === "amarillo" ? "Concentración media" : "Normal")}
+          <div class="dashboard-grid">
+            ${metrics.map((metric) => {
+              const trend = formatTrend(metric.trend ?? 0);
+              return `
+                <article class="metric-card">
+                  <p class="metric-card__label">${metric.label}</p>
+                  <p class="metric-card__value">${metric.value}</p>
+                  <p class="metric-card__trend ${trend.className}">${trend.text}</p>
                 </article>
-              `).join("")
-            : `<p class="ayudas__empty">Sin datos. Usa "Cargar datos demo" para poblar el panel.</p>`}
+              `;
+            }).join("")}
+          </div>
+
+          <section class="dashboard-section" id="sec-ml1">
+            <h2 class="dashboard-section__title">ML1 — Necesidades emergentes</h2>
+            ${renderMlNecesidades(data.ml_necesidades_emergentes)}
+          </section>
+
+          <div id="sec-mapa">${renderMapaSection(data.mapa_inteligente)}</div>
+
+          <section class="dashboard-section">
+            <h2 class="dashboard-section__title">Alertas operativas</h2>
+            ${renderAlertas(data.alertas)}
+          </section>
+
+          <div id="resumen-ia-container"></div>
+
+          <div id="sec-oferta">${renderOfertaDemandaBanner(data)}</div>
+
+          <div id="sec-prioridades">${renderPanelPrioridades(data.prioridades_entidad)}</div>
+
+          <div id="sec-brechas">${renderBrechasSection(data)}</div>
+
+          <section class="dashboard-section" id="sec-municipios">
+            <h2 class="dashboard-section__title">Distribución por municipio</h2>
+            <div class="municipio-cards">
+              ${municipios.length > 0
+                ? municipios.map((m) => `
+                    <article class="municipio-card municipio-card--${escapeHtml(m.nivel || "verde")}">
+                      <p class="municipio-card__name">${escapeHtml(m.nombre)}</p>
+                      <p class="municipio-card__count">${m.total}</p>
+                      ${renderSemaforo(m.nivel, m.nivel === "rojo" ? "Alta concentración" : m.nivel === "amarillo" ? "Concentración media" : "Normal")}
+                    </article>
+                  `).join("")
+                : `<p class="ayudas__empty">Sin datos. Usa "Cargar datos A" o "Cargar datos B" para poblar el panel.</p>`}
+            </div>
+          </section>
+
+          <section class="dashboard-section">
+            <h2 class="dashboard-section__title">Prioridad de casos</h2>
+            ${renderRanking(data.por_prioridad, "Sin datos de prioridad.")}
+          </section>
+
+          <section class="dashboard-section">
+            <h2 class="dashboard-section__title">Necesidades reportadas</h2>
+            ${renderRanking(data.por_necesidad, "Sin necesidades registradas.")}
+          </section>
+
+          <section class="dashboard-section">
+            <h2 class="dashboard-section__title">Rutas activas</h2>
+            ${renderRanking(data.por_ruta, "Sin rutas registradas.")}
+          </section>
+
+          ${renderRecursosSection(data)}
         </div>
-      </section>
-
-      <section class="dashboard-section">
-        <h2 class="dashboard-section__title">Prioridad de casos</h2>
-        ${renderRanking(data.por_prioridad, "Sin datos de prioridad.")}
-      </section>
-
-      <section class="dashboard-section">
-        <h2 class="dashboard-section__title">Necesidades reportadas</h2>
-        ${renderRanking(data.por_necesidad, "Sin necesidades registradas.")}
-      </section>
-
-      <section class="dashboard-section">
-        <h2 class="dashboard-section__title">Rutas activas</h2>
-        ${renderRanking(data.por_ruta, "Sin rutas registradas.")}
-      </section>
-
-      ${renderRecursosSection(data)}
+      </div>
     </div>
   `;
 }

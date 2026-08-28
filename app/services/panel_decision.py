@@ -89,6 +89,7 @@ def generar_prioridades_entidad(
                 "explicacion",
                 f"{brecha['solicitudes']} solicitudes vs {brecha['recursos']} cupos demo.",
             ),
+            "municipio": brecha.get("municipio") or municipio_foco,
         })
 
     rutas = por_ruta or {}
@@ -111,5 +112,8 @@ def generar_prioridades_entidad(
                 else "No hay déficit de cupos en este momento."
             )
         ),
-        "disclaimer": "Recomendaciones basadas en solicitudes registradas y catálogo demostrativo.",
+        "disclaimer": (
+            "Demanda = pasaportes registrados. Oferta = cupos del catálogo demo en el mismo municipio. "
+            "En producción la entidad declara la oferta real."
+        ),
     }

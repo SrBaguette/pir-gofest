@@ -32,6 +32,7 @@ from app.services.panel_decision import generar_prioridades_entidad, resumir_bre
 _pasaportes: dict[str, dict] = {}
 _contador = 0
 _resumen_anterior: dict | None = None
+_perfil_demo_activo: str | None = None
 
 inicializar_base_datos()
 
@@ -51,14 +52,24 @@ def _actualizar_estado(pasaporte: dict) -> None:
 
 
 def limpiar_pasaportes() -> None:
-    global _contador, _resumen_anterior
+    global _contador, _resumen_anterior, _perfil_demo_activo
     _pasaportes.clear()
     if engine is not None:
         with engine.begin() as connection:
             connection.exec_driver_sql("DELETE FROM pasaportes")
     _contador = 0
     _resumen_anterior = None
+    _perfil_demo_activo = None
     limpiar_historial()
+
+
+def establecer_perfil_demo(perfil: str | None) -> None:
+    global _perfil_demo_activo
+    _perfil_demo_activo = perfil
+
+
+def obtener_perfil_demo() -> str | None:
+    return _perfil_demo_activo
 
 
 def _extraer_datos_pasaporte(datos):
@@ -330,17 +341,31 @@ ETIQUETAS_PROGRAMA = {
 }
 
 
-def _contar_recursos_por_categoria(recursos: list[dict]) -> dict[str, int]:
-    """Suma unidades disponibles (cupos), no solo cantidad de ítems del catálogo."""
+def _contar_recursos_por_categoria(recursos: list[dict], municipio: str | None = None) -> dict[str, int]:
+    """Suma unidades disponibles (cupos), opcionalmente filtradas por municipio."""
     conteo: dict[str, int] = {}
     for recurso in recursos:
+        if municipio and recurso.get("municipio", "").lower() != municipio.lower():
+            continue
         clave = recurso["categoria"].lower()
         unidades = int(recurso.get("unidades_disponibles", 1))
         conteo[clave] = conteo.get(clave, 0) + unidades
     return conteo
 
 
-def _enriquecer_item_brecha(necesidad: str, solicitudes: int, recursos: int) -> dict:
+def _necesidades_por_municipio(pasaportes: list[dict], municipio: str) -> dict[str, int]:
+    mun = municipio.lower()
+    listas = [p["necesidades"] for p in pasaportes if p.get("municipio", "").lower() == mun]
+    return _contar_items(listas)
+
+
+def _enriquecer_item_brecha(
+    necesidad: str,
+    solicitudes: int,
+    recursos: int,
+    municipio: str | None = None,
+    alcance: str = "regional",
+) -> dict:
     categoria = MAPEO_NECESIDAD_RECURSO.get(necesidad.lower(), necesidad.lower())
     programa = ETIQUETAS_PROGRAMA.get(necesidad.lower(), necesidad.capitalize())
     brecha = max(0, solicitudes - recursos)
@@ -349,25 +374,27 @@ def _enriquecer_item_brecha(necesidad: str, solicitudes: int, recursos: int) -> 
     else:
         cobertura = min(100, int(recursos / solicitudes * 100))
 
+    lugar = f" en {municipio}" if municipio and alcance == "municipio" else " (toda la zona demo)"
+
     if brecha <= 0:
         estado = "cubierto"
         estado_label = "Cupos suficientes"
         explicacion = (
-            f"{solicitudes} persona(s) pidieron «{necesidad}». "
-            f"Hay {recursos} cupos demostrativos de «{programa}» — la demanda registrada está cubierta."
+            f"{solicitudes} persona(s) pidieron «{necesidad}»{lugar}. "
+            f"Hay {recursos} cupos de «{programa}» — la demanda registrada está cubierta."
         )
     elif brecha <= 5:
         estado = "atencion"
         estado_label = "Déficit moderado"
         explicacion = (
-            f"{solicitudes} solicitudes de «{necesidad}» y solo {recursos} cupos de «{programa}». "
+            f"{solicitudes} solicitudes de «{necesidad}»{lugar} y solo {recursos} cupos de «{programa}». "
             f"Faltan al menos {brecha} cupo(s) para atender a todos los registrados."
         )
     else:
         estado = "critico"
         estado_label = "Déficit crítico"
         explicacion = (
-            f"Alta presión: {solicitudes} solicitudes vs {recursos} cupos de «{programa}». "
+            f"Alta presión{lugar}: {solicitudes} solicitudes vs {recursos} cupos de «{programa}». "
             f"Se requieren al menos {brecha} cupos adicionales (demo)."
         )
 
@@ -382,14 +409,18 @@ def _enriquecer_item_brecha(necesidad: str, solicitudes: int, recursos: int) -> 
         "estado": estado,
         "estado_label": estado_label,
         "explicacion": explicacion,
+        "municipio": municipio,
+        "alcance": alcance,
     }
 
 
 def _calcular_brechas_detalladas(
     por_necesidad: dict[str, int],
     recursos_disponibles: list[dict],
+    municipio: str | None = None,
 ) -> list[dict]:
-    recursos_por_categoria = _contar_recursos_por_categoria(recursos_disponibles)
+    alcance = "municipio" if municipio else "regional"
+    recursos_por_categoria = _contar_recursos_por_categoria(recursos_disponibles, municipio)
     brechas = []
 
     for necesidad, solicitudes in sorted(
@@ -399,9 +430,29 @@ def _calcular_brechas_detalladas(
     ):
         categoria = MAPEO_NECESIDAD_RECURSO.get(necesidad.lower(), necesidad.lower())
         recursos = recursos_por_categoria.get(categoria, 0)
-        brechas.append(_enriquecer_item_brecha(necesidad, solicitudes, recursos))
+        brechas.append(_enriquecer_item_brecha(
+            necesidad, solicitudes, recursos, municipio=municipio, alcance=alcance,
+        ))
 
     return brechas
+
+
+def _meta_oferta(recursos_disponibles: list[dict]) -> dict:
+    total_cupos = sum(int(r.get("unidades_disponibles", 0)) for r in recursos_disponibles)
+    return {
+        "tipo": "catalogo_demostrativo",
+        "total_programas": len(recursos_disponibles),
+        "total_cupos": total_cupos,
+        "mensaje": (
+            "Oferta simulada: representa lo que una alcaldía o gobernación "
+            "declararía como programas disponibles por municipio."
+        ),
+        "como_se_calcula": (
+            "Demanda = pasaportes registrados. Oferta = cupos del catálogo en el mismo municipio. "
+            "Brecha = solicitudes − cupos."
+        ),
+        "produccion": "En operación real, la entidad cargaría o sincronizaría programas oficiales.",
+    }
 
 
 def _generar_alertas(resumen: dict, tendencias: dict) -> list[dict]:
@@ -495,20 +546,37 @@ def obtener_resumen_dashboard(recursos_disponibles: list[dict]) -> dict:
 
     por_necesidad = _contar_items([p["necesidades"] for p in lista])
     por_tipo_de_dano = _contar_items([p["danos"] for p in lista])
-    brechas = enriquecer_brechas(
+    por_municipio = _contar_campo(lista, "municipio")
+
+    brechas_regional = enriquecer_brechas(
         _calcular_brechas_detalladas(por_necesidad, recursos_disponibles)
     )
-    brechas_resumen = resumir_brechas(brechas)
+    brechas_resumen_regional = resumir_brechas(brechas_regional)
 
-    por_municipio = _contar_campo(lista, "municipio")
+    municipio_foco = max(por_municipio, key=por_municipio.get) if por_municipio else None
+    brechas_municipio: list[dict] = []
+    brechas_resumen_municipio: dict = {}
+    if municipio_foco:
+        por_nec_mun = _necesidades_por_municipio(lista, municipio_foco)
+        brechas_municipio = enriquecer_brechas(
+            _calcular_brechas_detalladas(
+                por_nec_mun, recursos_disponibles, municipio=municipio_foco,
+            )
+        )
+        brechas_resumen_municipio = resumir_brechas(brechas_municipio)
+        brechas_resumen_municipio["municipio"] = municipio_foco
+
+    brechas = brechas_municipio if brechas_municipio else brechas_regional
+    brechas_resumen = brechas_resumen_municipio if brechas_municipio else brechas_resumen_regional
+
     max_municipio = max(por_municipio.values()) if por_municipio else 0
     municipios_detalle = [
         {
             "nombre": nombre,
-            "total": total,
-            "nivel": semaforo_municipio(total, max_municipio),
+            "total": casos,
+            "nivel": semaforo_municipio(casos, max_municipio),
         }
-        for nombre, total in sorted(por_municipio.items(), key=lambda x: x[1], reverse=True)
+        for nombre, casos in sorted(por_municipio.items(), key=lambda x: x[1], reverse=True)
     ]
 
     por_prioridad = _contar_campo(lista, "prioridad_etiqueta")
@@ -531,7 +599,16 @@ def obtener_resumen_dashboard(recursos_disponibles: list[dict]) -> dict:
         "por_prioridad": por_prioridad,
         "por_tipo_de_dano": por_tipo_de_dano,
         "brechas": brechas,
+        "brechas_regional": brechas_regional,
+        "brechas_municipio_foco": brechas_municipio,
         "brechas_resumen": brechas_resumen,
+        "municipio_foco_brechas": municipio_foco,
+        "oferta_meta": _meta_oferta(recursos_disponibles),
+        "demanda_meta": {
+            "total_solicitudes": total,
+            "por_municipio": por_municipio,
+            "mensaje": "Demanda real = diagnósticos y pasaportes registrados por las personas.",
+        },
         "prioridades_entidad": generar_prioridades_entidad(
             brechas,
             por_municipio,
@@ -543,6 +620,7 @@ def obtener_resumen_dashboard(recursos_disponibles: list[dict]) -> dict:
         "recursos_disponibles": recursos_disponibles,
         "recursos_total": len(recursos_disponibles),
         "recursos_resumen_zonas": resumen_por_zona(),
+        "perfil_demo": obtener_perfil_demo(),
     }
 
     if _resumen_anterior is None:

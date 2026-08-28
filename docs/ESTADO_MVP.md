@@ -11,7 +11,7 @@
 | ML2 mapa clusters básico (Leaflet) | ✅ |
 | **Gemini gratis** — NLU, confianza ML4, recomendación ML3, resumen ML1 | ✅ |
 | Demo WhatsApp funcional (`/whatsapp-demo.html`) | ✅ |
-| Seed demo 150 casos | ✅ |
+| Seed demo 250 casos por zona sísmica | ✅ |
 
 ## 🔶 En otro equipo / pendiente corto
 

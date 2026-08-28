@@ -175,10 +175,12 @@ def integracion_twilio():
 
 
 @app.post("/demo/seed")
-def demo_seed(cantidad: int = 150, reemplazar: bool = False):
+def demo_seed(cantidad: int = 250, reemplazar: bool = False, perfil: str = "a"):
     if cantidad < 1 or cantidad > 500:
         raise HTTPException(status_code=400, detail="cantidad debe estar entre 1 y 500")
-    return generar_casos(cantidad=cantidad, reemplazar=reemplazar)
+    if perfil.lower() not in ("a", "b"):
+        raise HTTPException(status_code=400, detail="perfil debe ser 'a' o 'b'")
+    return generar_casos(cantidad=cantidad, reemplazar=reemplazar, perfil=perfil.lower())
 
 
 app.mount(
