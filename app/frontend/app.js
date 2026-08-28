@@ -92,6 +92,7 @@ const state = {
   showAyudas: true,
   dashboardData: null,
   dashboardUpdatedAt: null,
+  mapaInstance: null,
   error: "",
   loading: false,
 };
@@ -1271,23 +1272,34 @@ function renderDashboardView() {
 
 function bindDashboardActions() {
   const seedBtn = document.getElementById("btn-seed-demo");
-  if (!seedBtn) return;
-  seedBtn.addEventListener("click", async () => {
-    seedBtn.disabled = true;
-    seedBtn.textContent = "Generando…";
-    try {
-      const response = await fetch(`${API_BASE}/demo/seed?cantidad=100&reemplazar=true`, { method: "POST" });
-      if (!response.ok) throw new Error("No se pudo generar datos demo.");
-      const result = await response.json();
-      showToast(result.mensaje);
-      await fetchDashboard();
-    } catch (error) {
-      showToast(error.message || "Error al cargar demo.");
-    } finally {
-      seedBtn.disabled = false;
-      seedBtn.textContent = "Cargar datos demo (100)";
-    }
-  });
+  if (seedBtn && seedBtn.dataset.bound !== "1") {
+    seedBtn.dataset.bound = "1";
+    seedBtn.addEventListener("click", async () => {
+      const btn = document.getElementById("btn-seed-demo");
+      if (!btn) return;
+      btn.disabled = true;
+      btn.textContent = "Generando…";
+      try {
+        const response = await fetch(`${API_BASE}/demo/seed?cantidad=100&reemplazar=true`, { method: "POST" });
+        if (!response.ok) throw new Error("No se pudo generar datos demo.");
+        const result = await response.json();
+        showToast(result.mensaje);
+        await fetchDashboard();
+      } catch (error) {
+        showToast(error.message || "Error al cargar demo.");
+      } finally {
+        const refreshed = document.getElementById("btn-seed-demo");
+        if (refreshed) {
+          refreshed.disabled = false;
+          refreshed.textContent = "Cargar datos demo (100)";
+        }
+      }
+    });
+  }
+
+  if (state.dashboardData?.mapa_inteligente) {
+    initMapaInteligente(state.dashboardData.mapa_inteligente);
+  }
 }
 
 function renderAlertas(alertas) {
@@ -1308,6 +1320,106 @@ function renderAlertas(alertas) {
       `).join("")}
     </ul>
   `;
+}
+
+function renderMlNecesidades(alertas) {
+  const items = alertas || [];
+  if (items.length === 0) {
+    return `<p class="ayudas__empty">Sin patrones emergentes detectados. Carga datos demo para ver ML1 en acción.</p>`;
+  }
+  return `
+    <ul class="ml-alertas-list">
+      ${items.map((item) => `
+        <li class="ml-alerta ml-alerta--${escapeHtml(item.nivel)}">
+          <div class="ml-alerta__header">
+            ${renderSemaforo(item.nivel, item.tipo === "crecimiento_temporal" ? "Crecimiento" : "Concentración")}
+            <span class="ml-alerta__tipo">${escapeHtml(item.tipo === "crecimiento_temporal" ? "ML1 · Temporal" : "ML1 · Geográfico")}</span>
+          </div>
+          <p class="ml-alerta__mensaje">${escapeHtml(item.mensaje)}</p>
+          ${item.accion_recomendada ? `<p class="ml-alerta__accion">→ ${escapeHtml(item.accion_recomendada)}</p>` : ""}
+        </li>
+      `).join("")}
+    </ul>
+  `;
+}
+
+function renderMapaSection(mapa) {
+  if (!mapa) return "";
+  return `
+    <section class="dashboard-section">
+      <h2 class="dashboard-section__title">Mapa inteligente de afectación (ML2)</h2>
+      <p class="ayudas__intro">${escapeHtml(mapa.resumen || "")}</p>
+      <div id="mapa-afectacion" class="mapa-container" role="img" aria-label="Mapa de clusters de afectación"></div>
+      <div class="mapa-leyenda">
+        <span>${renderSemaforo("rojo", "Hotspot alto")}</span>
+        <span>${renderSemaforo("amarillo", "Concentración media")}</span>
+        <span>${renderSemaforo("verde", "Baja concentración")}</span>
+      </div>
+      ${(mapa.subclusters || []).length > 0 ? `
+        <h3 class="result__section-title" style="margin-top:1rem">Subclusters detectados</h3>
+        <ul class="subcluster-list">
+          ${mapa.subclusters.slice(0, 5).map((s) => `
+            <li class="subcluster-item">
+              <strong>${escapeHtml(s.etiqueta)}</strong>
+              <span>${escapeHtml(s.descripcion)}</span>
+            </li>
+          `).join("")}
+        </ul>
+      ` : ""}
+    </section>
+  `;
+}
+
+function initMapaInteligente(mapa) {
+  if (!mapa || !window.L) return;
+  const el = document.getElementById("mapa-afectacion");
+  if (!el) return;
+
+  if (state.mapaInstance) {
+    state.mapaInstance.remove();
+    state.mapaInstance = null;
+  }
+
+  const centro = mapa.centro || { lat: 3.45, lng: -76.53 };
+  const map = L.map(el, { scrollWheelZoom: false }).setView([centro.lat, centro.lng], mapa.zoom || 8);
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "© OpenStreetMap",
+    maxZoom: 18,
+  }).addTo(map);
+
+  const colores = { rojo: "#b42318", amarillo: "#92610a", verde: "#157a3a" };
+
+  (mapa.clusters || []).forEach((cluster) => {
+    const radio = Math.min(28, 8 + cluster.total * 1.5);
+    L.circleMarker([cluster.lat, cluster.lng], {
+      radius: radio,
+      color: colores[cluster.nivel] || colores.verde,
+      fillColor: colores[cluster.nivel] || colores.verde,
+      fillOpacity: 0.55,
+      weight: 2,
+    })
+      .bindPopup(
+        `<strong>${cluster.etiqueta}</strong><br>${cluster.descripcion}<br>`
+        + `<em>${cluster.recuperables} recuperables</em>`
+      )
+      .addTo(map);
+  });
+
+  (mapa.subclusters || []).forEach((sub) => {
+    L.circleMarker([sub.lat, sub.lng], {
+      radius: 6,
+      color: "#0d3b66",
+      fillColor: "#0d3b66",
+      fillOpacity: 0.8,
+      weight: 1,
+    })
+      .bindPopup(`<strong>${sub.etiqueta}</strong><br>${sub.descripcion}`)
+      .addTo(map);
+  });
+
+  state.mapaInstance = map;
+  setTimeout(() => map.invalidateSize(), 100);
 }
 
 function renderTendenciaBanner(tendencia) {
@@ -1350,6 +1462,13 @@ function renderDashboard(data) {
       </div>
 
       ${renderTendenciaBanner(data.tendencia_emergente)}
+
+      <section class="dashboard-section">
+        <h2 class="dashboard-section__title">ML1 — Necesidades emergentes</h2>
+        ${renderMlNecesidades(data.ml_necesidades_emergentes)}
+      </section>
+
+      ${renderMapaSection(data.mapa_inteligente)}
 
       <div class="dashboard-grid">
         ${metrics.map((metric) => {
@@ -1455,6 +1574,7 @@ async function fetchDashboard() {
 
     if (isDashboardView()) {
       app.innerHTML = renderDashboard(state.dashboardData);
+      bindDashboardActions();
     }
   } catch (error) {
     if (isDashboardView()) {
@@ -1463,6 +1583,7 @@ async function fetchDashboard() {
           <p class="error-msg">${escapeHtml(getFetchErrorMessage(error))}</p>
         </section>
       `;
+      bindDashboardActions();
     }
   }
 }

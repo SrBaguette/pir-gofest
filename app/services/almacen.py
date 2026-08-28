@@ -16,6 +16,12 @@ from app.services.semaforo import (
     enriquecer_brechas,
     semaforo_municipio,
 )
+from app.services.ml_necesidades import (
+    detectar_necesidades_emergentes,
+    limpiar_historial,
+    registrar_snapshot,
+)
+from app.services.ml_mapa import generar_mapa_inteligente
 
 _pasaportes: dict[str, dict] = {}
 _contador = 0
@@ -41,6 +47,7 @@ def limpiar_pasaportes() -> None:
     _pasaportes.clear()
     _contador = 0
     _resumen_anterior = None
+    limpiar_historial()
 
 
 def _extraer_datos_pasaporte(datos):
@@ -129,6 +136,10 @@ def crear_pasaporte(datos, resultado: dict) -> dict:
 
     _pasaportes[pasaporte_id] = pasaporte
     return _pasaporte_publico(pasaporte)
+
+
+def listar_pasaportes() -> list[dict]:
+    return list(_pasaportes.values())
 
 
 def obtener_pasaporte(pasaporte_id: str) -> dict:
@@ -289,6 +300,13 @@ def _generar_alertas(resumen: dict, tendencias: dict) -> list[dict]:
             ),
         })
 
+    for ml1 in resumen.get("ml_necesidades_emergentes", [])[:3]:
+        alertas.insert(0, {
+            "nivel": "alta" if ml1["nivel"] == "rojo" else "media",
+            "mensaje": ml1["mensaje"],
+            "accion_recomendada": ml1.get("accion_recomendada"),
+        })
+
     if not alertas:
         alertas.append({
             "nivel": "info",
@@ -329,6 +347,9 @@ def obtener_resumen_dashboard(recursos_disponibles: list[dict]) -> dict:
 
     por_prioridad = _contar_campo(lista, "prioridad_etiqueta")
     tendencia_emergente = detectar_tendencia_emergente(lista)
+    registrar_snapshot(lista)
+    ml_necesidades_emergentes = detectar_necesidades_emergentes(lista)
+    mapa_inteligente = generar_mapa_inteligente(lista)
 
     resumen = {
         "total_afectados": total,
@@ -345,6 +366,8 @@ def obtener_resumen_dashboard(recursos_disponibles: list[dict]) -> dict:
         "por_tipo_de_dano": por_tipo_de_dano,
         "brechas": brechas,
         "tendencia_emergente": tendencia_emergente,
+        "ml_necesidades_emergentes": ml_necesidades_emergentes,
+        "mapa_inteligente": mapa_inteligente,
         "recursos_disponibles": recursos_disponibles,
     }
 

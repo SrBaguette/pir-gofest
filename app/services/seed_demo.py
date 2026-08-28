@@ -9,7 +9,8 @@ from app.schemas import (
     DiagnosticoIngresos,
     DiagnosticoVivienda,
 )
-from app.services.almacen import crear_pasaporte, limpiar_pasaportes, marcar_accion_completada
+from app.services.almacen import crear_pasaporte, limpiar_pasaportes, marcar_accion_completada, listar_pasaportes
+from app.services.ml_necesidades import registrar_snapshot, registrar_snapshot_demo_previo
 from app.services.motor_ruta import generar_ruta
 
 MUNICIPIOS = [
@@ -89,6 +90,10 @@ def generar_casos(cantidad: int = 100, reemplazar: bool = False) -> dict:
                 pasaporte = marcar_accion_completada(pasaporte["id"], j)
 
         creados.append(pasaporte["id"])
+
+    lista = listar_pasaportes()
+    registrar_snapshot_demo_previo(lista)
+    registrar_snapshot(lista)
 
     return {
         "generados": len(creados),
