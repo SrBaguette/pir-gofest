@@ -16,6 +16,19 @@ TWILIO_WHATSAPP_FROM = os.getenv("TWILIO_WHATSAPP_FROM", "")  # ej: whatsapp:+14
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "")  # ej: https://xxxx.ngrok.io
 
 
+def _avisos_configuracion() -> list[str]:
+    avisos = []
+    if not PUBLIC_BASE_URL.strip():
+        avisos.append("PUBLIC_BASE_URL vacío: Twilio no puede alcanzar un servidor local.")
+    if TWILIO_ACCOUNT_SID and not TWILIO_ACCOUNT_SID.startswith("AC"):
+        avisos.append("TWILIO_ACCOUNT_SID debe comenzar con AC.")
+    if TWILIO_AUTH_TOKEN.startswith("SK"):
+        avisos.append("TWILIO_AUTH_TOKEN parece una API Key (SK); usa el Auth Token de Account Info.")
+    if TWILIO_WHATSAPP_FROM and not TWILIO_WHATSAPP_FROM.startswith("whatsapp:+"):
+        avisos.append("TWILIO_WHATSAPP_FROM debe tener formato whatsapp:+... .")
+    return avisos
+
+
 def twilio_configurado() -> bool:
     return bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_WHATSAPP_FROM)
 
@@ -95,10 +108,12 @@ def enviar_mensaje_whatsapp(destino: str, texto: str) -> dict:
 
 
 def estado_integracion() -> dict:
+    avisos = _avisos_configuracion()
     return {
         "configurado": twilio_configurado(),
         "webhook_url": webhook_url() if PUBLIC_BASE_URL else None,
         "whatsapp_from": TWILIO_WHATSAPP_FROM or None,
+        "avisos": avisos,
         "variables_requeridas": [
             "TWILIO_ACCOUNT_SID",
             "TWILIO_AUTH_TOKEN",
