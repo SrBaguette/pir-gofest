@@ -26,6 +26,8 @@ from app.services.ml_necesidades import (
 )
 from app.services.ml_mapa import generar_mapa_inteligente
 from app.services.base_datos import engine, inicializar_base_datos, usar_cloud_sql
+from app.services.catalogo_recursos import resumen_por_zona
+from app.services.panel_decision import generar_prioridades_entidad, resumir_brechas
 
 _pasaportes: dict[str, dict] = {}
 _contador = 0

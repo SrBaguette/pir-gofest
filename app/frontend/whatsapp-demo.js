@@ -3,7 +3,7 @@
  * Conecta con POST /diagnostico cuando el backend está activo.
  */
 
-const API_BASE = "http://127.0.0.1:8015";
+const API_BASE = "http://127.0.0.1:8001";
 
 const MENU =
   "Hola. Somos el Pasaporte Inteligente de Recuperación.\n" +
