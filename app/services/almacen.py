@@ -306,15 +306,81 @@ MAPEO_NECESIDAD_RECURSO = {
     "insumos": "insumos",
     "transporte": "transporte",
     "espacio": "espacio",
+    "servicios básicos": "alimentación",
+}
+
+ETIQUETAS_PROGRAMA = {
+    "alojamiento": "Alojamiento temporal",
+    "alimentación": "Kits de alimentación",
+    "alimentacion": "Kits de alimentación",
+    "agua": "Agua potable",
+    "medicamentos": "Salud y medicamentos",
+    "salud": "Salud y medicamentos",
+    "reparación": "Reparación de vivienda",
+    "reparacion": "Reparación de vivienda",
+    "vivienda": "Reparación de vivienda",
+    "equipamiento": "Equipamiento productivo",
+    "financiamiento": "Capital de trabajo",
+    "dinero": "Capital de trabajo",
+    "insumos": "Insumos productivos",
+    "transporte": "Transporte de apoyo",
+    "espacio": "Espacio comercial temporal",
 }
 
 
 def _contar_recursos_por_categoria(recursos: list[dict]) -> dict[str, int]:
+    """Suma unidades disponibles (cupos), no solo cantidad de ítems del catálogo."""
     conteo: dict[str, int] = {}
     for recurso in recursos:
         clave = recurso["categoria"].lower()
-        conteo[clave] = conteo.get(clave, 0) + 1
+        unidades = int(recurso.get("unidades_disponibles", 1))
+        conteo[clave] = conteo.get(clave, 0) + unidades
     return conteo
+
+
+def _enriquecer_item_brecha(necesidad: str, solicitudes: int, recursos: int) -> dict:
+    categoria = MAPEO_NECESIDAD_RECURSO.get(necesidad.lower(), necesidad.lower())
+    programa = ETIQUETAS_PROGRAMA.get(necesidad.lower(), necesidad.capitalize())
+    brecha = max(0, solicitudes - recursos)
+    if solicitudes == 0:
+        cobertura = 100
+    else:
+        cobertura = min(100, int(recursos / solicitudes * 100))
+
+    if brecha <= 0:
+        estado = "cubierto"
+        estado_label = "Cupos suficientes"
+        explicacion = (
+            f"{solicitudes} persona(s) pidieron «{necesidad}». "
+            f"Hay {recursos} cupos demostrativos de «{programa}» — la demanda registrada está cubierta."
+        )
+    elif brecha <= 5:
+        estado = "atencion"
+        estado_label = "Déficit moderado"
+        explicacion = (
+            f"{solicitudes} solicitudes de «{necesidad}» y solo {recursos} cupos de «{programa}». "
+            f"Faltan al menos {brecha} cupo(s) para atender a todos los registrados."
+        )
+    else:
+        estado = "critico"
+        estado_label = "Déficit crítico"
+        explicacion = (
+            f"Alta presión: {solicitudes} solicitudes vs {recursos} cupos de «{programa}». "
+            f"Se requieren al menos {brecha} cupos adicionales (demo)."
+        )
+
+    return {
+        "necesidad": necesidad,
+        "programa": programa,
+        "categoria_recurso": categoria,
+        "solicitudes": solicitudes,
+        "recursos": recursos,
+        "brecha": brecha,
+        "cobertura_pct": cobertura,
+        "estado": estado,
+        "estado_label": estado_label,
+        "explicacion": explicacion,
+    }
 
 
 def _calcular_brechas_detalladas(
@@ -331,12 +397,7 @@ def _calcular_brechas_detalladas(
     ):
         categoria = MAPEO_NECESIDAD_RECURSO.get(necesidad.lower(), necesidad.lower())
         recursos = recursos_por_categoria.get(categoria, 0)
-        brechas.append({
-            "necesidad": necesidad,
-            "solicitudes": solicitudes,
-            "recursos": recursos,
-            "brecha": max(0, solicitudes - recursos),
-        })
+        brechas.append(_enriquecer_item_brecha(necesidad, solicitudes, recursos))
 
     return brechas
 
@@ -393,8 +454,9 @@ def _generar_alertas(resumen: dict, tendencias: dict) -> list[dict]:
             "nivel": "alta" if nivel == "rojo" else "media",
             "mensaje": (
                 f"Brecha detectada en {mayor['necesidad']}: "
-                f"{mayor['solicitudes']} solicitudes vs {mayor['recursos']} recursos demo."
+                f"{mayor['solicitudes']} solicitudes vs {mayor['recursos']} unidades disponibles (demo)."
             ),
+            "origen": "reglas",
         })
 
     tendencia = resumen.get("tendencia_emergente")
@@ -406,13 +468,6 @@ def _generar_alertas(resumen: dict, tendencias: dict) -> list[dict]:
                 f"{tendencia['necesidad']} concentrados en {tendencia['municipio']} "
                 f"({tendencia['casos']} casos)."
             ),
-        })
-
-    for ml1 in resumen.get("ml_necesidades_emergentes", [])[:3]:
-        alertas.insert(0, {
-            "nivel": "alta" if ml1["nivel"] == "rojo" else "media",
-            "mensaje": ml1["mensaje"],
-            "accion_recomendada": ml1.get("accion_recomendada"),
         })
 
     if not alertas:
@@ -441,6 +496,7 @@ def obtener_resumen_dashboard(recursos_disponibles: list[dict]) -> dict:
     brechas = enriquecer_brechas(
         _calcular_brechas_detalladas(por_necesidad, recursos_disponibles)
     )
+    brechas_resumen = resumir_brechas(brechas)
 
     por_municipio = _contar_campo(lista, "municipio")
     max_municipio = max(por_municipio.values()) if por_municipio else 0
@@ -473,10 +529,18 @@ def obtener_resumen_dashboard(recursos_disponibles: list[dict]) -> dict:
         "por_prioridad": por_prioridad,
         "por_tipo_de_dano": por_tipo_de_dano,
         "brechas": brechas,
+        "brechas_resumen": brechas_resumen,
+        "prioridades_entidad": generar_prioridades_entidad(
+            brechas,
+            por_municipio,
+            _contar_campo(lista, "ruta_nombre"),
+        ),
         "tendencia_emergente": tendencia_emergente,
         "ml_necesidades_emergentes": ml_necesidades_emergentes,
         "mapa_inteligente": mapa_inteligente,
         "recursos_disponibles": recursos_disponibles,
+        "recursos_total": len(recursos_disponibles),
+        "recursos_resumen_zonas": resumen_por_zona(),
     }
 
     if _resumen_anterior is None:

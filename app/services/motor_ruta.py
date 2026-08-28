@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from app.services.catalogo_recursos import obtener_catalogo_completo, obtener_catalogo_publico
+
 TERMINOS_EQUIPAMIENTO = ("maquinaria", "equipos", "herramientas")
 TERMINOS_ESPACIO = ("local", "infraestructura", "vivienda", "espacio")
 TERMINOS_ECONOMICO = ("dinero", "financiamiento", "capital")
@@ -230,12 +232,20 @@ def buscar_ayudas_compatibles(contexto: ContextoMatching, datos, categoria_princ
     if categoria_principal is None:
         categoria_principal = _determinar_categoria_principal(contexto, datos)
 
+    municipio = getattr(datos, "municipio", "").strip().lower()
+    catalogo = obtener_catalogo_completo()
+    en_municipio = [r for r in catalogo if r["municipio"].lower() == municipio]
+    pool = en_municipio if en_municipio else catalogo
+
     compatibles = [
-        recurso for recurso in CATALOGO_RECURSOS
+        recurso for recurso in pool
         if _recurso_es_compatible(recurso, contexto)
     ]
     compatibles.sort(
-        key=lambda recurso: _puntuar_recurso(recurso, contexto, categoria_principal),
+        key=lambda recurso: (
+            _puntuar_recurso(recurso, contexto, categoria_principal),
+            recurso.get("unidades_disponibles", 0),
+        ),
         reverse=True,
     )
     return [
@@ -243,8 +253,12 @@ def buscar_ayudas_compatibles(contexto: ContextoMatching, datos, categoria_princ
             "nombre": recurso["nombre"],
             "descripcion": recurso["descripcion"],
             "categoria": recurso["categoria"],
+            "municipio": recurso["municipio"],
+            "zona_sismica": recurso["zona_sismica"],
+            "unidades_disponibles": recurso["unidades_disponibles"],
+            "demostrativo": True,
         }
-        for recurso in compatibles
+        for recurso in compatibles[:5]
     ]
 
 
@@ -374,12 +388,5 @@ def generar_ruta(datos):
     return generar_ruta_ingresos(datos)
 
 
-def obtener_catalogo_publico():
-    return [
-        {
-            "nombre": recurso["nombre"],
-            "descripcion": recurso["descripcion"],
-            "categoria": recurso["categoria"],
-        }
-        for recurso in CATALOGO_RECURSOS
-    ]
+# Re-export para compatibilidad con imports existentes
+__all__ = ["generar_ruta", "obtener_catalogo_publico", "CATALOGO_RECURSOS"]

@@ -1,0 +1,233 @@
+.wa-demo {
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 1.25rem;
+  display: grid;
+  gap: 1.25rem;
+}
+
+@media (min-width: 960px) {
+  .wa-demo { grid-template-columns: 1fr 380px; align-items: start; }
+}
+
+.wa-demo__main { display: grid; gap: 1rem; }
+
+.wa-demo__intro { padding: 1.25rem; }
+
+.wa-demo__title {
+  margin: 0 0 .5rem;
+  font-size: 1.25rem;
+  color: var(--brand);
+}
+
+.wa-demo__lead {
+  margin: 0 0 1rem;
+  color: var(--text-muted);
+  font-size: .92rem;
+  line-height: 1.55;
+}
+
+.wa-demo__routes {
+  display: grid;
+  gap: .5rem;
+  margin-bottom: 1rem;
+}
+
+@media (min-width: 640px) {
+  .wa-demo__routes { grid-template-columns: repeat(3, 1fr); }
+}
+
+.wa-route-btn {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  padding: .65rem .75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: border-color .15s, background .15s;
+}
+
+.wa-route-btn:hover {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.wa-route-btn__n {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background: var(--brand);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: .85rem;
+  flex-shrink: 0;
+}
+
+.wa-demo__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+
+.wa-demo__back {
+  color: #fff;
+  text-decoration: none;
+  font-size: .88rem;
+  opacity: .95;
+}
+
+.wa-demo__back:hover { text-decoration: underline; }
+
+.wa-demo__status {
+  font-size: .72rem;
+  padding: .2rem .5rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,.15);
+  margin-left: .75rem;
+}
+
+.wa-demo__status--ok { background: rgba(21,122,58,.35); }
+.wa-demo__status--off { background: rgba(180,35,24,.35); }
+
+.wa-phone {
+  background: #0b1418;
+  border-radius: 24px;
+  padding: 10px;
+  box-shadow: 0 8px 32px rgba(13,59,102,.12);
+  max-width: 420px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.wa-phone__screen {
+  background: #ece5dd;
+  border-radius: 18px;
+  overflow: hidden;
+  min-height: 520px;
+  display: flex;
+  flex-direction: column;
+}
+
+.wa-phone__header {
+  background: var(--brand);
+  color: #fff;
+  padding: .85rem 1rem;
+  border-bottom: 3px solid #f0c040;
+}
+
+.wa-phone__header small {
+  display: block;
+  opacity: .88;
+  font-size: .72rem;
+  margin-top: .15rem;
+}
+
+.wa-phone__chat {
+  flex: 1;
+  padding: .85rem .75rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: .45rem;
+}
+
+.wa-bubble {
+  max-width: 88%;
+  padding: .55rem .75rem;
+  border-radius: 8px;
+  font-size: .88rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.wa-bubble--bot {
+  align-self: flex-start;
+  background: #fff;
+  border: 1px solid rgba(0,0,0,.06);
+  box-shadow: 0 1px 2px rgba(0,0,0,.06);
+}
+
+.wa-bubble--user {
+  align-self: flex-end;
+  background: #d9fdd3;
+  border: 1px solid rgba(0,0,0,.04);
+}
+
+.wa-bubble--error {
+  align-self: flex-start;
+  background: var(--sem-rojo-bg);
+  border: 1px solid var(--sem-rojo-border);
+  color: var(--sem-rojo);
+}
+
+.wa-bubble--system {
+  align-self: center;
+  background: rgba(255,255,255,.75);
+  font-size: .75rem;
+  color: var(--text-muted);
+  max-width: 95%;
+  text-align: center;
+}
+
+.wa-phone__form {
+  display: flex;
+  gap: .45rem;
+  padding: .55rem;
+  background: #f0f2f5;
+  border-top: 1px solid #ddd;
+}
+
+.wa-phone__form input {
+  flex: 1;
+  border: 1px solid #ccc;
+  border-radius: 20px;
+  padding: .5rem .85rem;
+  font: inherit;
+  background: #fff;
+}
+
+.wa-phone__send {
+  border: none;
+  background: var(--brand);
+  color: #fff;
+  border-radius: 20px;
+  padding: 0 1rem;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: .85rem;
+}
+
+.wa-json-panel { padding: 1rem; }
+
+.wa-json-panel__title {
+  margin: 0 0 .35rem;
+  font-size: 1rem;
+  color: var(--brand);
+}
+
+.wa-json-panel__hint {
+  margin: 0 0 .75rem;
+  font-size: .82rem;
+  color: var(--text-muted);
+}
+
+.wa-json-panel__code {
+  background: #0f1720;
+  color: #d7e3f4;
+  padding: .85rem;
+  border-radius: var(--radius);
+  overflow: auto;
+  font-size: .72rem;
+  line-height: 1.45;
+  max-height: min(70vh, 560px);
+  margin: 0;
+}

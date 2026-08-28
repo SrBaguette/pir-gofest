@@ -1,4 +1,4 @@
-const API_BASE = "http://127.0.0.1:8001";
+const API_BASE = "http://127.0.0.1:8015";
 const API_URL = `${API_BASE}/diagnostico`;
 const DASHBOARD_POLL_MS = 30000;
 
@@ -357,12 +357,15 @@ function renderWelcome() {
       </p>
       <div class="welcome__channels">
         ${renderSemaforo("verde", "Web")}
-        ${renderSemaforo("amarillo", "WhatsApp próximamente")}
+        <a href="whatsapp-demo.html" class="welcome__wa-link">${renderSemaforo("amarillo", "WhatsApp")}</a>
       </div>
       <div class="actions actions--single">
         <button type="button" class="btn btn--primary btn--wide" id="btn-start">
           Iniciar diagnóstico
         </button>
+        <a href="whatsapp-demo.html" class="btn btn--accent btn--wide" style="text-align:center;text-decoration:none;display:inline-flex;align-items:center;justify-content:center">
+          Canal WhatsApp (demo)
+        </a>
         <button type="button" class="btn btn--accent btn--wide" id="btn-consultar-pasaporte">
           Consultar pasaporte
         </button>
@@ -1280,7 +1283,7 @@ function bindDashboardActions() {
       btn.disabled = true;
       btn.textContent = "Generando…";
       try {
-        const response = await fetch(`${API_BASE}/demo/seed?cantidad=100&reemplazar=true`, { method: "POST" });
+        const response = await fetch(`${API_BASE}/demo/seed?cantidad=150&reemplazar=true`, { method: "POST" });
         if (!response.ok) throw new Error("No se pudo generar datos demo.");
         const result = await response.json();
         showToast(result.mensaje);
@@ -1291,7 +1294,7 @@ function bindDashboardActions() {
         const refreshed = document.getElementById("btn-seed-demo");
         if (refreshed) {
           refreshed.disabled = false;
-          refreshed.textContent = "Cargar datos demo (100)";
+          refreshed.textContent = "Cargar datos demo (150)";
         }
       }
     });
@@ -1304,10 +1307,11 @@ function bindDashboardActions() {
 
 function renderAlertas(alertas) {
   if (!alertas || alertas.length === 0) {
-    return `<p class="ayudas__empty">Sin alertas activas.</p>`;
+    return `<p class="ayudas__empty">Sin alertas operativas activas.</p>`;
   }
 
   return `
+    <p class="ayudas__intro">Generadas por reglas del sistema (cambios, concentración, brechas). No usan IA.</p>
     <ul class="alertas-list">
       ${alertas.map((alerta) => `
         <li class="alerta alerta--${escapeHtml(alerta.nivel || "info")}">
@@ -1319,6 +1323,37 @@ function renderAlertas(alertas) {
         </li>
       `).join("")}
     </ul>
+  `;
+}
+
+function renderResumenIA(resumen) {
+  if (!resumen) {
+    return `
+      <section class="dashboard-section dashboard-section--ia">
+        <h2 class="dashboard-section__title">Resumen ejecutivo (IA)</h2>
+        <p class="ayudas__empty">Gemini no está activo. Las alertas y el simulador funcionan sin IA.</p>
+      </section>
+    `;
+  }
+  const texto = resumen.resumen_ejecutivo || resumen.resumen || resumen.texto;
+  if (!texto) {
+    return `
+      <section class="dashboard-section dashboard-section--ia">
+        <h2 class="dashboard-section__title">Resumen ejecutivo (IA)</h2>
+        <p class="ayudas__empty">Sin narrativa IA disponible (Gemini inactivo o sin datos).</p>
+      </section>
+    `;
+  }
+  const titulo = resumen.titulo ? `<strong>${escapeHtml(resumen.titulo)}</strong><br>` : "";
+  const accion = resumen.accion_recomendada
+    ? `<p class="resumen-ia__accion">→ ${escapeHtml(resumen.accion_recomendada)}</p>`
+    : "";
+  return `
+    <section class="dashboard-section dashboard-section--ia">
+      <h2 class="dashboard-section__title">Resumen ejecutivo (IA — Gemini)</h2>
+      <p class="ayudas__intro">Narrativa opcional sobre patrones ya detectados por ML1/reglas. No genera alertas nuevas.</p>
+      <div class="resumen-ia">${titulo}${escapeHtml(texto)}${accion}</div>
+    </section>
   `;
 }
 
@@ -1366,6 +1401,155 @@ function renderMapaSection(mapa) {
           `).join("")}
         </ul>
       ` : ""}
+    </section>
+  `;
+}
+
+function renderRecursosSection(data) {
+  const zonas = data.recursos_resumen_zonas || [];
+  const recursos = data.recursos_disponibles || [];
+  const total = data.recursos_total || recursos.length;
+  const muestra = recursos.slice(0, 24);
+
+  return `
+    <section class="dashboard-section">
+      <h2 class="dashboard-section__title">Recursos disponibles (demostrativos)</h2>
+      <p class="ayudas__intro">
+        Catálogo de <strong>${total}</strong> recursos repartidos por zona de afectación sísmica
+        (Valle Norte, Valle Sur, Cauca). Las brechas comparan solicitudes vs unidades disponibles.
+      </p>
+      <div class="recursos-zona-grid">
+        ${zonas.map((zona) => `
+          <article class="recurso-zona-card">
+            <h3 class="recurso-zona-card__title">${escapeHtml(zona.zona)}</h3>
+            <p class="recurso-zona-card__stat"><strong>${zona.recursos}</strong> tipos · <strong>${zona.unidades_totales}</strong> unidades</p>
+            <p class="recurso-zona-card__mun">${escapeHtml((zona.municipios || []).join(", "))}</p>
+          </article>
+        `).join("")}
+      </div>
+      <table class="brechas-table recursos-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Recurso</th>
+            <th>Zona</th>
+            <th>Municipio</th>
+            <th>Unidades</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${muestra.map((r) => `
+            <tr>
+              <td>${escapeHtml(r.id || "—")}</td>
+              <td><strong>${escapeHtml(r.nombre)}</strong><br><small>${escapeHtml(r.categoria)}</small></td>
+              <td>${escapeHtml(r.zona_sismica || "—")}</td>
+              <td>${escapeHtml(r.municipio || "—")}</td>
+              <td>${r.unidades_disponibles ?? "—"}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+      ${total > muestra.length ? `<p class="ayudas__disclaimer">Mostrando ${muestra.length} de ${total}. Catálogo completo en <code>GET /recursos/catalogo</code>.</p>` : ""}
+      <p class="ayudas__disclaimer">Datos demostrativos. En producción se conectarían con fuentes oficiales verificadas.</p>
+    </section>
+  `;
+}
+
+function renderBrechasSection(data) {
+  const brechas = data.brechas || [];
+  const resumen = data.brechas_resumen || {};
+  const maxBrecha = Math.max(1, ...brechas.map((b) => Number(b.brecha) || 0));
+
+  return `
+    <section class="dashboard-section">
+      <h2 class="dashboard-section__title">Brechas: ¿alcanzan los cupos?</h2>
+      <div class="brechas-glosario">
+        <p><strong>¿Qué es una brecha?</strong> Compara cuántas personas pidieron una necesidad vs cuántos <em>cupos demostrativos</em> hay en el catálogo para atenderla.</p>
+        <ul>
+          <li><strong>Solicitudes</strong> = personas que reportaron esa necesidad en su diagnóstico.</li>
+          <li><strong>Cupos disponibles</strong> = unidades del programa equivalente en el catálogo (150 recursos por zona).</li>
+          <li><strong>Faltan</strong> = solicitudes − cupos (si es mayor que cero, hay déficit).</li>
+        </ul>
+        ${resumen.mensaje ? `<p class="brechas-glosario__resumen">${escapeHtml(resumen.mensaje)}</p>` : ""}
+      </div>
+      <table class="brechas-table">
+        <thead>
+          <tr>
+            <th>Estado</th>
+            <th>Necesidad reportada</th>
+            <th>Programa equivalente</th>
+            <th>Solicitudes</th>
+            <th>Cupos</th>
+            <th>Faltan</th>
+            <th>Cobertura</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${brechas.length > 0
+            ? brechas.map((brecha) => `
+                <tr class="brecha-row--${escapeHtml(brecha.nivel || brecha.estado || "verde")}">
+                  <td>${renderSemaforo(brecha.nivel || "verde", brecha.estado_label || "—")}</td>
+                  <td>${escapeHtml(brecha.necesidad)}</td>
+                  <td>${escapeHtml(brecha.programa || "—")}</td>
+                  <td>${brecha.solicitudes}</td>
+                  <td>${brecha.recursos}</td>
+                  <td class="brecha-value">
+                    <span class="brecha-value__bar" aria-hidden="true">
+                      <span class="brecha-value__fill" style="width: ${Math.round(((Number(brecha.brecha) || 0) / maxBrecha) * 100)}%"></span>
+                    </span>
+                    <strong>${brecha.brecha}</strong>
+                  </td>
+                  <td>${brecha.cobertura_pct ?? 0}%</td>
+                </tr>
+                <tr class="brecha-explicacion-row">
+                  <td colspan="7"><em>${escapeHtml(brecha.explicacion || "")}</em></td>
+                </tr>
+              `).join("")
+            : `<tr><td colspan="7">Sin datos. Carga los 150 casos demo para ver brechas.</td></tr>`}
+        </tbody>
+      </table>
+    </section>
+  `;
+}
+
+function renderPanelPrioridades(prioridades) {
+  if (!prioridades) return "";
+  const items = prioridades.prioridades || [];
+
+  return `
+    <section class="dashboard-section panel-prioridades">
+      <h2 class="dashboard-section__title">¿Dónde invertir primero?</h2>
+      <p class="ayudas__intro">
+        Priorización automática para entidades. Cruza solicitudes reales, cupos del catálogo y concentración territorial.
+        Sin sliders ni proyecciones abstractas.
+      </p>
+      <div class="prioridades-contexto">
+        <p>
+          <strong>Foco territorial:</strong> ${escapeHtml(prioridades.municipio_foco)}
+          (${prioridades.casos_en_foco} casos) · Zona ${escapeHtml(prioridades.zona_sismica)}
+        </p>
+        <p class="prioridades-contexto__mensaje">${escapeHtml(prioridades.mensaje_general || "")}</p>
+      </div>
+      ${items.length > 0
+        ? `<ol class="prioridades-list">
+            ${items.map((item) => `
+              <li class="prioridad-item prioridad-item--${escapeHtml(item.nivel)}">
+                <div class="prioridad-item__header">
+                  <span class="prioridad-item__orden">#${item.orden}</span>
+                  ${renderSemaforo(item.nivel, item.nivel === "rojo" ? "Alta" : item.nivel === "amarillo" ? "Media" : "Baja")}
+                  <strong>${escapeHtml(item.programa)}</strong>
+                </div>
+                <p class="prioridad-item__accion">${escapeHtml(item.accion_sugerida)}</p>
+                <p class="prioridad-item__detalle">
+                  ${item.solicitudes} solicitudes · ${item.cupos_disponibles} cupos · faltan ${item.faltan_cupos}
+                  · cobertura ${item.cobertura_pct}%
+                </p>
+                <p class="prioridad-item__justificacion"><em>${escapeHtml(item.justificacion)}</em></p>
+              </li>
+            `).join("")}
+          </ol>`
+        : `<p class="ayudas__empty">No hay déficit de cupos con los datos actuales. Las necesidades reportadas están cubiertas en el catálogo demo.</p>`}
+      <p class="ayudas__disclaimer">${escapeHtml(prioridades.disclaimer || "")}</p>
     </section>
   `;
 }
@@ -1453,11 +1637,11 @@ function renderDashboard(data) {
       <div class="dashboard__header">
         <div>
           <h1 class="dashboard__title">Panel territorial</h1>
-          <p class="dashboard__subtitle">Necesidades, brechas y alertas para entidades de respuesta.</p>
+          <p class="dashboard__subtitle">Vista para alcaldías y entidades: qué piden las personas, dónde hay déficit de cupos y qué hacer primero.</p>
           ${state.dashboardUpdatedAt ? `<p class="dashboard__updated">Actualizado: ${state.dashboardUpdatedAt}</p>` : ""}
         </div>
         <div class="dashboard__actions">
-          <button type="button" class="btn btn--secondary btn--sm" id="btn-seed-demo">Cargar datos demo (100)</button>
+          <button type="button" class="btn btn--secondary btn--sm" id="btn-seed-demo">Cargar datos demo (150)</button>
         </div>
       </div>
 
@@ -1484,9 +1668,15 @@ function renderDashboard(data) {
       </div>
 
       <section class="dashboard-section">
-        <h2 class="dashboard-section__title">Alertas</h2>
+        <h2 class="dashboard-section__title">Alertas operativas</h2>
         ${renderAlertas(data.alertas)}
       </section>
+
+      <div id="resumen-ia-container"></div>
+
+      ${renderPanelPrioridades(data.prioridades_entidad)}
+
+      ${renderBrechasSection(data)}
 
       <section class="dashboard-section">
         <h2 class="dashboard-section__title">Distribución por municipio</h2>
@@ -1518,49 +1708,22 @@ function renderDashboard(data) {
         ${renderRanking(data.por_ruta, "Sin rutas registradas.")}
       </section>
 
-      <section class="dashboard-section">
-        <h2 class="dashboard-section__title">Brechas (necesidad vs recursos)</h2>
-        <table class="brechas-table">
-          <thead>
-            <tr>
-              <th>Estado</th>
-              <th>Necesidad</th>
-              <th>Solicitudes</th>
-              <th>Recursos</th>
-              <th>Brecha</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${(data.brechas || []).length > 0
-              ? data.brechas.map((brecha) => `
-                  <tr class="brecha-row--${escapeHtml(brecha.nivel || "verde")}">
-                    <td>${renderSemaforo(brecha.nivel, brecha.nivel === "rojo" ? "Crítica" : brecha.nivel === "amarillo" ? "Atención" : "Cubierta")}</td>
-                    <td>${escapeHtml(brecha.necesidad)}</td>
-                    <td>${brecha.solicitudes}</td>
-                    <td>${brecha.recursos}</td>
-                    <td>${brecha.brecha}</td>
-                  </tr>
-                `).join("")
-              : `<tr><td colspan="5">Sin datos de brechas.</td></tr>`}
-          </tbody>
-        </table>
-      </section>
-
-      <section class="dashboard-section">
-        <h2 class="dashboard-section__title">Recursos disponibles (demostrativos)</h2>
-        <div class="recursos-grid">
-          ${(data.recursos_disponibles || []).map((recurso) => `
-            <article class="ayuda-card">
-              <span class="ayuda-card__categoria">${escapeHtml(recurso.categoria)}</span>
-              <h4 class="ayuda-card__nombre">${escapeHtml(recurso.nombre)}</h4>
-              <p class="ayuda-card__descripcion">${escapeHtml(recurso.descripcion)}</p>
-            </article>
-          `).join("")}
-        </div>
-        <p class="ayudas__disclaimer">Recursos demostrativos. En producción se conectarían con fuentes oficiales.</p>
-      </section>
+      ${renderRecursosSection(data)}
     </div>
   `;
+}
+
+async function fetchResumenIA() {
+  const container = document.getElementById("resumen-ia-container");
+  if (!container) return;
+  try {
+    const response = await fetch(`${API_BASE}/ml/necesidades-emergentes`);
+    if (!response.ok) throw new Error();
+    const data = await response.json();
+    container.innerHTML = renderResumenIA(data.resumen_ia);
+  } catch {
+    container.innerHTML = renderResumenIA(null);
+  }
 }
 
 async function fetchDashboard() {
@@ -1575,6 +1738,7 @@ async function fetchDashboard() {
     if (isDashboardView()) {
       app.innerHTML = renderDashboard(state.dashboardData);
       bindDashboardActions();
+      fetchResumenIA();
     }
   } catch (error) {
     if (isDashboardView()) {
