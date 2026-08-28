@@ -26,7 +26,10 @@ CENTRO_VALLE = {"lat": 3.45, "lng": -76.53}
 
 def _coords(municipio: str) -> tuple[float, float]:
     clave = municipio.lower().strip()
-    return COORDENADAS_MUNICIPIOS.get(clave, CENTRO_VALLE)
+    return COORDENADAS_MUNICIPIOS.get(
+        clave,
+        (CENTRO_VALLE["lat"], CENTRO_VALLE["lng"]),
+    )
 
 
 def _nivel_cluster(total: int, max_total: int) -> str:

@@ -2,7 +2,10 @@
 Almacenamiento temporal en memoria para Pasaportes de Recuperación.
 """
 
+import json
+
 from fastapi import HTTPException
+from sqlalchemy import text
 
 from app.schemas import (
     DiagnosticoAyudaInmediata,
@@ -22,12 +25,13 @@ from app.services.ml_necesidades import (
     registrar_snapshot,
 )
 from app.services.ml_mapa import generar_mapa_inteligente
-from app.services.catalogo_recursos import resumen_por_zona
-from app.services.panel_decision import generar_prioridades_entidad, resumir_brechas
+from app.services.base_datos import engine, inicializar_base_datos, usar_cloud_sql
 
 _pasaportes: dict[str, dict] = {}
 _contador = 0
 _resumen_anterior: dict | None = None
+
+inicializar_base_datos()
 
 
 def _calcular_progreso(pasaporte: dict) -> int:
@@ -47,6 +51,9 @@ def _actualizar_estado(pasaporte: dict) -> None:
 def limpiar_pasaportes() -> None:
     global _contador, _resumen_anterior
     _pasaportes.clear()
+    if engine is not None:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("DELETE FROM pasaportes")
     _contador = 0
     _resumen_anterior = None
     limpiar_historial()
@@ -115,6 +122,13 @@ def _pasaporte_publico(pasaporte: dict) -> dict:
 
 def crear_pasaporte(datos, resultado: dict) -> dict:
     global _contador
+    if engine is not None:
+        with engine.connect() as connection:
+            ultimo_id = connection.execute(text("""
+                SELECT COALESCE(MAX(CAST(SUBSTRING(id FROM 5) AS INTEGER)), 0)
+                FROM pasaportes
+            """)).scalar_one()
+        _contador = max(_contador, ultimo_id)
     _contador += 1
     pasaporte_id = f"PAS-{str(_contador).zfill(4)}"
     base = _extraer_datos_pasaporte(datos)
@@ -136,22 +150,114 @@ def crear_pasaporte(datos, resultado: dict) -> dict:
         "confianza_etiqueta": confianza_etiqueta,
     }
 
-    _pasaportes[pasaporte_id] = pasaporte
+    if engine is not None:
+        with engine.begin() as connection:
+            connection.execute(
+                text("""
+                    INSERT INTO pasaportes (
+                        id, tipo_ruta, ruta_nombre, municipio, personas_hogar,
+                        actividad_economica, danos, necesidades, puede_operar,
+                        urgencia, que_hacer_primero, ruta, ayudas,
+                        prioridad_nivel, prioridad_etiqueta, confianza_nivel,
+                        confianza_etiqueta
+                    ) VALUES (
+                        :id, :tipo_ruta, :ruta_nombre, :municipio, :personas_hogar,
+                        :actividad_economica, CAST(:danos AS jsonb), CAST(:necesidades AS jsonb),
+                        :puede_operar, :urgencia, :que_hacer_primero, CAST(:ruta AS jsonb),
+                        CAST(:ayudas AS jsonb), :prioridad_nivel, :prioridad_etiqueta,
+                        :confianza_nivel, :confianza_etiqueta
+                    )
+                """),
+                {**pasaporte,
+                 "personas_hogar": getattr(datos, "personas_hogar", None),
+                 "urgencia": pasaporte.get("urgencia"),
+                 "danos": json.dumps(pasaporte["danos"]),
+                 "necesidades": json.dumps(pasaporte["necesidades"]),
+                 "ruta": json.dumps(pasaporte["ruta"]),
+                 "ayudas": json.dumps(pasaporte["ayudas"])},
+            )
+            connection.execute(
+                text("""
+                    INSERT INTO acciones_ruta (pasaporte_id, numero, descripcion)
+                    SELECT :id, numero, descripcion
+                    FROM jsonb_to_recordset(CAST(:acciones AS jsonb))
+                        AS acciones(numero INTEGER, descripcion TEXT)
+                    ON CONFLICT (pasaporte_id, numero) DO NOTHING
+                """),
+                {
+                    "id": pasaporte_id,
+                    "acciones": json.dumps([
+                        {"numero": numero, "descripcion": descripcion}
+                        for numero, descripcion in enumerate(pasaporte["ruta"])
+                    ]),
+                },
+            )
+    else:
+        _pasaportes[pasaporte_id] = pasaporte
     return _pasaporte_publico(pasaporte)
 
 
 def listar_pasaportes() -> list[dict]:
+    if engine is not None:
+        with engine.connect() as connection:
+            rows = connection.execute(text("SELECT * FROM pasaportes ORDER BY creado_en")).mappings()
+            return [_fila_a_pasaporte(row, connection) for row in rows]
     return list(_pasaportes.values())
 
 
+def _fila_a_pasaporte(row, connection) -> dict:
+    pasaporte = dict(row)
+    completadas = connection.execute(
+        text("SELECT numero FROM acciones_ruta WHERE pasaporte_id = :id AND completada"),
+        {"id": pasaporte["id"]},
+    ).scalars()
+    pasaporte["acciones_completadas"] = set(completadas)
+    return pasaporte
+
+
 def obtener_pasaporte(pasaporte_id: str) -> dict:
-    pasaporte = _pasaportes.get(pasaporte_id)
+    if engine is not None:
+        with engine.connect() as connection:
+            row = connection.execute(
+                text("SELECT * FROM pasaportes WHERE id = :id"), {"id": pasaporte_id}
+            ).mappings().first()
+            pasaporte = _fila_a_pasaporte(row, connection) if row else None
+    else:
+        pasaporte = _pasaportes.get(pasaporte_id)
     if pasaporte is None:
         raise HTTPException(status_code=404, detail="Pasaporte no encontrado")
     return _pasaporte_publico(pasaporte)
 
 
 def marcar_accion_completada(pasaporte_id: str, numero: int) -> dict:
+    if engine is not None:
+        with engine.begin() as connection:
+            row = connection.execute(
+                text("SELECT ruta FROM pasaportes WHERE id = :id"), {"id": pasaporte_id}
+            ).mappings().first()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Pasaporte no encontrado")
+            if numero < 0 or numero >= len(row["ruta"]):
+                raise HTTPException(status_code=400, detail="Número de acción inválido")
+            connection.execute(text("""
+                UPDATE acciones_ruta
+                SET completada = TRUE, completada_en = CURRENT_TIMESTAMP
+                WHERE pasaporte_id = :id AND numero = :numero
+            """), {"id": pasaporte_id, "numero": numero})
+            completadas = connection.execute(text("""
+                SELECT COUNT(*) FROM acciones_ruta
+                WHERE pasaporte_id = :id AND completada
+            """), {"id": pasaporte_id}).scalar_one()
+            progreso = int(completadas / len(row["ruta"]) * 100) if row["ruta"] else 0
+            connection.execute(text("""
+                UPDATE pasaportes
+                SET progreso = :progreso,
+                    estado = CASE WHEN :progreso = 100 THEN 'Ruta completada' ELSE 'En recuperación' END,
+                    actualizado_en = CURRENT_TIMESTAMP
+                WHERE id = :id
+            """), {"id": pasaporte_id, "progreso": progreso})
+        return obtener_pasaporte(pasaporte_id)
+
     pasaporte = _pasaportes.get(pasaporte_id)
     if pasaporte is None:
         raise HTTPException(status_code=404, detail="Pasaporte no encontrado")
@@ -376,7 +482,7 @@ def _generar_alertas(resumen: dict, tendencias: dict) -> list[dict]:
 def obtener_resumen_dashboard(recursos_disponibles: list[dict]) -> dict:
     global _resumen_anterior
 
-    lista = list(_pasaportes.values())
+    lista = listar_pasaportes() if usar_cloud_sql() else list(_pasaportes.values())
     total = len(lista)
     no_operativos = sum(1 for p in lista if not p["puede_operar"])
     operativos = total - no_operativos
