@@ -1071,6 +1071,48 @@ h1, h2, h3, h4, button, input, th, .header__name, .header__sigla,
 
 .scenario-simulator__disclaimer { margin: 1rem 0 0; color: var(--text-muted); font-size: 12px; font-style: italic; }
 
+.brechas-glosario {
+  margin-bottom: 1rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.brechas-glosario ul { margin: 0.5rem 0 0; padding-left: 1.2rem; }
+.brechas-glosario__resumen { margin: 0.75rem 0 0; font-weight: 600; color: var(--brand); }
+.brecha-explicacion-row td {
+  padding-top: 0;
+  padding-bottom: 0.85rem;
+  font-size: 13px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-prioridades .prioridades-contexto {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border-left: 4px solid var(--brand);
+  background: rgba(13, 59, 102, 0.05);
+  border-radius: 0 8px 8px 0;
+}
+.prioridades-contexto__mensaje { margin: 0.5rem 0 0; font-weight: 600; }
+.prioridades-list { margin: 0; padding-left: 1.2rem; display: grid; gap: 1rem; }
+.prioridad-item {
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.prioridad-item--rojo { border-left: 4px solid var(--sem-rojo); }
+.prioridad-item--amarillo { border-left: 4px solid var(--sem-amarillo); }
+.prioridad-item__header { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; }
+.prioridad-item__orden { font: 700 14px/1 var(--font-mono); color: var(--brand); }
+.prioridad-item__accion { margin: 0 0 0.35rem; font-weight: 600; }
+.prioridad-item__detalle { margin: 0; font-size: 13px; color: var(--text-muted); }
+.prioridad-item__justificacion { margin: 0.35rem 0 0; font-size: 13px; }
+
 .brechas-table th {
   font-size: 0.72rem;
   font-weight: 700;

@@ -1283,7 +1283,7 @@ function bindDashboardActions() {
       btn.disabled = true;
       btn.textContent = "Generando…";
       try {
-        const response = await fetch(`${API_BASE}/demo/seed?cantidad=100&reemplazar=true`, { method: "POST" });
+        const response = await fetch(`${API_BASE}/demo/seed?cantidad=150&reemplazar=true`, { method: "POST" });
         if (!response.ok) throw new Error("No se pudo generar datos demo.");
         const result = await response.json();
         showToast(result.mensaje);
@@ -1294,7 +1294,7 @@ function bindDashboardActions() {
         const refreshed = document.getElementById("btn-seed-demo");
         if (refreshed) {
           refreshed.disabled = false;
-          refreshed.textContent = "Cargar datos demo (100)";
+          refreshed.textContent = "Cargar datos demo (150)";
         }
       }
     });
@@ -1303,7 +1303,6 @@ function bindDashboardActions() {
   if (state.dashboardData?.mapa_inteligente) {
     initMapaInteligente(state.dashboardData.mapa_inteligente);
   }
-  bindScenarioSimulator();
 }
 
 function renderAlertas(alertas) {
@@ -1456,106 +1455,103 @@ function renderRecursosSection(data) {
   `;
 }
 
-function renderScenarioSimulator() {
+function renderBrechasSection(data) {
+  const brechas = data.brechas || [];
+  const resumen = data.brechas_resumen || {};
+  const maxBrecha = Math.max(1, ...brechas.map((b) => Number(b.brecha) || 0));
+
   return `
-    <section class="dashboard-section scenario-simulator" aria-labelledby="scenario-heading">
-      <h2 id="scenario-heading" class="dashboard-section__title">Simulador de escenarios</h2>
-      <p class="ayudas__intro">
-        Cruza casos registrados, brechas y recursos de entrada. Cálculo por reglas transparentes (sin IA).
-      </p>
-      <div class="scenario-inputs">
-        ${renderScenarioInput("presupuesto", "Presupuesto (millones COP)", 0, 1000, 500)}
-        ${renderScenarioInput("kits", "Kits de emergencia", 0, 1000, 500)}
-        ${renderScenarioInput("tecnicos", "Técnicos disponibles", 0, 100, 30)}
+    <section class="dashboard-section">
+      <h2 class="dashboard-section__title">Brechas: ¿alcanzan los cupos?</h2>
+      <div class="brechas-glosario">
+        <p><strong>¿Qué es una brecha?</strong> Compara cuántas personas pidieron una necesidad vs cuántos <em>cupos demostrativos</em> hay en el catálogo para atenderla.</p>
+        <ul>
+          <li><strong>Solicitudes</strong> = personas que reportaron esa necesidad en su diagnóstico.</li>
+          <li><strong>Cupos disponibles</strong> = unidades del programa equivalente en el catálogo (150 recursos por zona).</li>
+          <li><strong>Faltan</strong> = solicitudes − cupos (si es mayor que cero, hay déficit).</li>
+        </ul>
+        ${resumen.mensaje ? `<p class="brechas-glosario__resumen">${escapeHtml(resumen.mensaje)}</p>` : ""}
       </div>
-      <p id="scenario-context" class="scenario-context">Cargando contexto territorial…</p>
-      <div class="scenario-results">
-        <article class="scenario-card scenario-card--alert" data-scenario-id="A">
-          <p class="scenario-card__label">Escenario A</p>
-          <p class="scenario-card__description">Priorizar familias vulnerables</p>
-          <strong id="scenario-a" class="scenario-card__value">— personas</strong>
-          <p id="scenario-a-detail" class="scenario-card__detail"></p>
-        </article>
-        <article class="scenario-card scenario-card--primary" data-scenario-id="B">
-          <p class="scenario-card__label">Escenario B</p>
-          <p class="scenario-card__description">Priorizar reparación básica</p>
-          <strong id="scenario-b" class="scenario-card__value">— viviendas</strong>
-          <p id="scenario-b-detail" class="scenario-card__detail"></p>
-        </article>
-        <article class="scenario-card scenario-card--success" data-scenario-id="C">
-          <p class="scenario-card__label">Escenario C</p>
-          <p class="scenario-card__description">Priorizar recuperación productiva</p>
-          <strong id="scenario-c" class="scenario-card__value">— negocios</strong>
-          <p id="scenario-c-detail" class="scenario-card__detail"></p>
-        </article>
-      </div>
-      <p id="scenario-recomendacion" class="scenario-recomendacion"></p>
-      <p class="scenario-simulator__disclaimer">La plataforma recomienda escenarios; la decisión final es de la entidad.</p>
+      <table class="brechas-table">
+        <thead>
+          <tr>
+            <th>Estado</th>
+            <th>Necesidad reportada</th>
+            <th>Programa equivalente</th>
+            <th>Solicitudes</th>
+            <th>Cupos</th>
+            <th>Faltan</th>
+            <th>Cobertura</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${brechas.length > 0
+            ? brechas.map((brecha) => `
+                <tr class="brecha-row--${escapeHtml(brecha.nivel || brecha.estado || "verde")}">
+                  <td>${renderSemaforo(brecha.nivel || "verde", brecha.estado_label || "—")}</td>
+                  <td>${escapeHtml(brecha.necesidad)}</td>
+                  <td>${escapeHtml(brecha.programa || "—")}</td>
+                  <td>${brecha.solicitudes}</td>
+                  <td>${brecha.recursos}</td>
+                  <td class="brecha-value">
+                    <span class="brecha-value__bar" aria-hidden="true">
+                      <span class="brecha-value__fill" style="width: ${Math.round(((Number(brecha.brecha) || 0) / maxBrecha) * 100)}%"></span>
+                    </span>
+                    <strong>${brecha.brecha}</strong>
+                  </td>
+                  <td>${brecha.cobertura_pct ?? 0}%</td>
+                </tr>
+                <tr class="brecha-explicacion-row">
+                  <td colspan="7"><em>${escapeHtml(brecha.explicacion || "")}</em></td>
+                </tr>
+              `).join("")
+            : `<tr><td colspan="7">Sin datos. Carga los 150 casos demo para ver brechas.</td></tr>`}
+        </tbody>
+      </table>
     </section>
   `;
 }
 
-function renderScenarioInput(id, label, min, max, value) {
-  return `<div class="scenario-input"><label for="scenario-${id}">${label}</label><div class="scenario-input__controls"><input id="scenario-${id}" type="range" min="${min}" max="${max}" value="${value}" data-scenario-input="${id}"><input type="number" min="${min}" max="${max}" value="${value}" data-scenario-number="${id}" aria-label="Valor de ${label}"></div></div>`;
-}
+function renderPanelPrioridades(prioridades) {
+  if (!prioridades) return "";
+  const items = prioridades.prioridades || [];
 
-function bindScenarioSimulator() {
-  const values = { presupuesto: 500, kits: 500, tecnicos: 30 };
-  document.querySelectorAll("[data-scenario-input], [data-scenario-number]").forEach((input) => {
-    input.addEventListener("input", () => {
-      const id = input.dataset.scenarioInput || input.dataset.scenarioNumber;
-      const value = Math.min(Number(input.max), Math.max(Number(input.min), Number(input.value) || 0));
-      values[id] = value;
-      document.querySelector(`[data-scenario-input="${id}"]`).value = value;
-      document.querySelector(`[data-scenario-number="${id}"]`).value = value;
-      updateScenarioResults(values);
-    });
-  });
-  updateScenarioResults(values);
-}
-
-async function updateScenarioResults(values) {
-  const mapIds = { A: "scenario-a", B: "scenario-b", C: "scenario-c" };
-  try {
-    const response = await fetch(`${API_BASE}/dashboard/escenarios`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        presupuesto_millones: values.presupuesto,
-        kits_emergencia: values.kits,
-        tecnicos: values.tecnicos,
-      }),
-    });
-    if (!response.ok) throw new Error("escenarios");
-    const data = await response.json();
-    const ctx = data.contexto || {};
-    const contextEl = document.getElementById("scenario-context");
-    if (contextEl) {
-      contextEl.textContent = ctx.municipio_mayor_demanda
-        ? `Foco territorial: ${ctx.municipio_mayor_demanda} (${ctx.zona_sismica_foco}). ${ctx.casos_registrados?.total || 0} casos registrados.`
-        : "Sin casos registrados. Carga datos demo para simular con contexto real.";
-    }
-    (data.escenarios || []).forEach((esc) => {
-      const el = document.getElementById(mapIds[esc.id]);
-      const detail = document.getElementById(`${mapIds[esc.id]}-detail`);
-      if (el) el.textContent = esc.impacto_principal;
-      if (detail) detail.textContent = esc.impacto_detalle || "";
-      const card = document.querySelector(`[data-scenario-id="${esc.id}"]`);
-      if (card) card.classList.toggle("scenario-card--recommended", esc.id === data.recomendacion);
-    });
-    const recEl = document.getElementById("scenario-recomendacion");
-    if (recEl && data.recomendacion) {
-      const esc = (data.escenarios || []).find((e) => e.id === data.recomendacion);
-      recEl.textContent = esc
-        ? `Recomendación según brecha principal: Escenario ${data.recomendacion} — ${esc.titulo}.`
-        : "";
-    }
-  } catch {
-    Object.entries(mapIds).forEach(([, id]) => {
-      const el = document.getElementById(id);
-      if (el) el.textContent = "Error al calcular";
-    });
-  }
+  return `
+    <section class="dashboard-section panel-prioridades">
+      <h2 class="dashboard-section__title">¿Dónde invertir primero?</h2>
+      <p class="ayudas__intro">
+        Priorización automática para entidades. Cruza solicitudes reales, cupos del catálogo y concentración territorial.
+        Sin sliders ni proyecciones abstractas.
+      </p>
+      <div class="prioridades-contexto">
+        <p>
+          <strong>Foco territorial:</strong> ${escapeHtml(prioridades.municipio_foco)}
+          (${prioridades.casos_en_foco} casos) · Zona ${escapeHtml(prioridades.zona_sismica)}
+        </p>
+        <p class="prioridades-contexto__mensaje">${escapeHtml(prioridades.mensaje_general || "")}</p>
+      </div>
+      ${items.length > 0
+        ? `<ol class="prioridades-list">
+            ${items.map((item) => `
+              <li class="prioridad-item prioridad-item--${escapeHtml(item.nivel)}">
+                <div class="prioridad-item__header">
+                  <span class="prioridad-item__orden">#${item.orden}</span>
+                  ${renderSemaforo(item.nivel, item.nivel === "rojo" ? "Alta" : item.nivel === "amarillo" ? "Media" : "Baja")}
+                  <strong>${escapeHtml(item.programa)}</strong>
+                </div>
+                <p class="prioridad-item__accion">${escapeHtml(item.accion_sugerida)}</p>
+                <p class="prioridad-item__detalle">
+                  ${item.solicitudes} solicitudes · ${item.cupos_disponibles} cupos · faltan ${item.faltan_cupos}
+                  · cobertura ${item.cobertura_pct}%
+                </p>
+                <p class="prioridad-item__justificacion"><em>${escapeHtml(item.justificacion)}</em></p>
+              </li>
+            `).join("")}
+          </ol>`
+        : `<p class="ayudas__empty">No hay déficit de cupos con los datos actuales. Las necesidades reportadas están cubiertas en el catálogo demo.</p>`}
+      <p class="ayudas__disclaimer">${escapeHtml(prioridades.disclaimer || "")}</p>
+    </section>
+  `;
 }
 
 function initMapaInteligente(mapa) {
@@ -1625,8 +1621,6 @@ function renderTendenciaBanner(tendencia) {
 
 function renderDashboard(data) {
   const t = data.tendencias || {};
-  const brechas = data.brechas || [];
-  const maxBrecha = Math.max(1, ...brechas.map((brecha) => Number(brecha.brecha) || 0));
   const metrics = [
     { label: "Afectados registrados", value: data.total_afectados, trend: t.total_afectados },
     { label: "No operativos", value: data.total_no_operativos, trend: t.total_no_operativos },
@@ -1643,11 +1637,11 @@ function renderDashboard(data) {
       <div class="dashboard__header">
         <div>
           <h1 class="dashboard__title">Panel territorial</h1>
-          <p class="dashboard__subtitle">Necesidades, brechas y alertas para entidades de respuesta.</p>
+          <p class="dashboard__subtitle">Vista para alcaldías y entidades: qué piden las personas, dónde hay déficit de cupos y qué hacer primero.</p>
           ${state.dashboardUpdatedAt ? `<p class="dashboard__updated">Actualizado: ${state.dashboardUpdatedAt}</p>` : ""}
         </div>
         <div class="dashboard__actions">
-          <button type="button" class="btn btn--secondary btn--sm" id="btn-seed-demo">Cargar datos demo (100)</button>
+          <button type="button" class="btn btn--secondary btn--sm" id="btn-seed-demo">Cargar datos demo (150)</button>
         </div>
       </div>
 
@@ -1680,6 +1674,10 @@ function renderDashboard(data) {
 
       <div id="resumen-ia-container"></div>
 
+      ${renderPanelPrioridades(data.prioridades_entidad)}
+
+      ${renderBrechasSection(data)}
+
       <section class="dashboard-section">
         <h2 class="dashboard-section__title">Distribución por municipio</h2>
         <div class="municipio-cards">
@@ -1710,42 +1708,7 @@ function renderDashboard(data) {
         ${renderRanking(data.por_ruta, "Sin rutas registradas.")}
       </section>
 
-      <section class="dashboard-section">
-        <h2 class="dashboard-section__title">Brechas (necesidad vs recursos)</h2>
-        <table class="brechas-table">
-          <thead>
-            <tr>
-              <th>Estado</th>
-              <th>Necesidad</th>
-              <th>Solicitudes</th>
-              <th>Recursos (unidades)</th>
-              <th>Brecha</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${brechas.length > 0
-              ? brechas.map((brecha) => `
-                  <tr class="brecha-row--${escapeHtml(brecha.nivel || "verde")}">
-                    <td>${renderSemaforo(brecha.nivel, brecha.nivel === "rojo" ? "Crítica" : brecha.nivel === "amarillo" ? "Atención" : "Cubierta")}</td>
-                    <td>${escapeHtml(brecha.necesidad)}</td>
-                    <td>${brecha.solicitudes}</td>
-                    <td>${brecha.recursos}</td>
-                    <td class="brecha-value">
-                      <span class="brecha-value__bar" aria-hidden="true">
-                        <span class="brecha-value__fill" style="width: ${Math.round(((Number(brecha.brecha) || 0) / maxBrecha) * 100)}%"></span>
-                      </span>
-                      <strong>${brecha.brecha}</strong>
-                    </td>
-                  </tr>
-                `).join("")
-              : `<tr><td colspan="5">Sin datos de brechas.</td></tr>`}
-          </tbody>
-        </table>
-      </section>
-
       ${renderRecursosSection(data)}
-
-      ${renderScenarioSimulator()}
     </div>
   `;
 }

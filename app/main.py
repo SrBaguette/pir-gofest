@@ -186,7 +186,7 @@ def integracion_twilio():
 
 
 @app.post("/demo/seed")
-def demo_seed(cantidad: int = 100, reemplazar: bool = False):
+def demo_seed(cantidad: int = 150, reemplazar: bool = False):
     if cantidad < 1 or cantidad > 500:
         raise HTTPException(status_code=400, detail="cantidad debe estar entre 1 y 500")
     return generar_casos(cantidad=cantidad, reemplazar=reemplazar)

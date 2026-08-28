@@ -23,6 +23,7 @@ from app.services.ml_necesidades import (
 )
 from app.services.ml_mapa import generar_mapa_inteligente
 from app.services.catalogo_recursos import resumen_por_zona
+from app.services.panel_decision import generar_prioridades_entidad, resumir_brechas
 
 _pasaportes: dict[str, dict] = {}
 _contador = 0
@@ -199,6 +200,25 @@ MAPEO_NECESIDAD_RECURSO = {
     "insumos": "insumos",
     "transporte": "transporte",
     "espacio": "espacio",
+    "servicios básicos": "alimentación",
+}
+
+ETIQUETAS_PROGRAMA = {
+    "alojamiento": "Alojamiento temporal",
+    "alimentación": "Kits de alimentación",
+    "alimentacion": "Kits de alimentación",
+    "agua": "Agua potable",
+    "medicamentos": "Salud y medicamentos",
+    "salud": "Salud y medicamentos",
+    "reparación": "Reparación de vivienda",
+    "reparacion": "Reparación de vivienda",
+    "vivienda": "Reparación de vivienda",
+    "equipamiento": "Equipamiento productivo",
+    "financiamiento": "Capital de trabajo",
+    "dinero": "Capital de trabajo",
+    "insumos": "Insumos productivos",
+    "transporte": "Transporte de apoyo",
+    "espacio": "Espacio comercial temporal",
 }
 
 
@@ -210,6 +230,51 @@ def _contar_recursos_por_categoria(recursos: list[dict]) -> dict[str, int]:
         unidades = int(recurso.get("unidades_disponibles", 1))
         conteo[clave] = conteo.get(clave, 0) + unidades
     return conteo
+
+
+def _enriquecer_item_brecha(necesidad: str, solicitudes: int, recursos: int) -> dict:
+    categoria = MAPEO_NECESIDAD_RECURSO.get(necesidad.lower(), necesidad.lower())
+    programa = ETIQUETAS_PROGRAMA.get(necesidad.lower(), necesidad.capitalize())
+    brecha = max(0, solicitudes - recursos)
+    if solicitudes == 0:
+        cobertura = 100
+    else:
+        cobertura = min(100, int(recursos / solicitudes * 100))
+
+    if brecha <= 0:
+        estado = "cubierto"
+        estado_label = "Cupos suficientes"
+        explicacion = (
+            f"{solicitudes} persona(s) pidieron «{necesidad}». "
+            f"Hay {recursos} cupos demostrativos de «{programa}» — la demanda registrada está cubierta."
+        )
+    elif brecha <= 5:
+        estado = "atencion"
+        estado_label = "Déficit moderado"
+        explicacion = (
+            f"{solicitudes} solicitudes de «{necesidad}» y solo {recursos} cupos de «{programa}». "
+            f"Faltan al menos {brecha} cupo(s) para atender a todos los registrados."
+        )
+    else:
+        estado = "critico"
+        estado_label = "Déficit crítico"
+        explicacion = (
+            f"Alta presión: {solicitudes} solicitudes vs {recursos} cupos de «{programa}». "
+            f"Se requieren al menos {brecha} cupos adicionales (demo)."
+        )
+
+    return {
+        "necesidad": necesidad,
+        "programa": programa,
+        "categoria_recurso": categoria,
+        "solicitudes": solicitudes,
+        "recursos": recursos,
+        "brecha": brecha,
+        "cobertura_pct": cobertura,
+        "estado": estado,
+        "estado_label": estado_label,
+        "explicacion": explicacion,
+    }
 
 
 def _calcular_brechas_detalladas(
@@ -226,12 +291,7 @@ def _calcular_brechas_detalladas(
     ):
         categoria = MAPEO_NECESIDAD_RECURSO.get(necesidad.lower(), necesidad.lower())
         recursos = recursos_por_categoria.get(categoria, 0)
-        brechas.append({
-            "necesidad": necesidad,
-            "solicitudes": solicitudes,
-            "recursos": recursos,
-            "brecha": max(0, solicitudes - recursos),
-        })
+        brechas.append(_enriquecer_item_brecha(necesidad, solicitudes, recursos))
 
     return brechas
 
@@ -330,6 +390,7 @@ def obtener_resumen_dashboard(recursos_disponibles: list[dict]) -> dict:
     brechas = enriquecer_brechas(
         _calcular_brechas_detalladas(por_necesidad, recursos_disponibles)
     )
+    brechas_resumen = resumir_brechas(brechas)
 
     por_municipio = _contar_campo(lista, "municipio")
     max_municipio = max(por_municipio.values()) if por_municipio else 0
@@ -362,6 +423,12 @@ def obtener_resumen_dashboard(recursos_disponibles: list[dict]) -> dict:
         "por_prioridad": por_prioridad,
         "por_tipo_de_dano": por_tipo_de_dano,
         "brechas": brechas,
+        "brechas_resumen": brechas_resumen,
+        "prioridades_entidad": generar_prioridades_entidad(
+            brechas,
+            por_municipio,
+            _contar_campo(lista, "ruta_nombre"),
+        ),
         "tendencia_emergente": tendencia_emergente,
         "ml_necesidades_emergentes": ml_necesidades_emergentes,
         "mapa_inteligente": mapa_inteligente,

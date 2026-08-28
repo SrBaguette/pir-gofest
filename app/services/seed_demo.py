@@ -58,7 +58,7 @@ def _caso_ingresos() -> DiagnosticoIngresos:
     )
 
 
-def generar_casos(cantidad: int = 100, reemplazar: bool = False) -> dict:
+def generar_casos(cantidad: int = 150, reemplazar: bool = False) -> dict:
     if reemplazar:
         limpiar_pasaportes()
 
