@@ -1,4 +1,6 @@
-const API_BASE = "http://127.0.0.1:8001";
+const API_BASE = window.location.port === "8080"
+  ? "http://127.0.0.1:8001"
+  : "";
 const API_URL = `${API_BASE}/diagnostico`;
 const DASHBOARD_POLL_MS = 30000;
 
