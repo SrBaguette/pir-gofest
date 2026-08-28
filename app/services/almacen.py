@@ -1,0 +1,324 @@
+"""
+Almacenamiento temporal en memoria para Pasaportes de Recuperación.
+"""
+
+from fastapi import HTTPException
+
+from app.schemas import (
+    DiagnosticoAyudaInmediata,
+    DiagnosticoIngresos,
+    DiagnosticoVivienda,
+)
+
+_pasaportes: dict[str, dict] = {}
+_contador = 0
+_resumen_anterior: dict | None = None
+
+
+def _calcular_progreso(pasaporte: dict) -> int:
+    total = len(pasaporte["ruta"])
+    if total == 0:
+        return 0
+    completadas = len(pasaporte["acciones_completadas"])
+    return int(completadas / total * 100)
+
+
+def _actualizar_estado(pasaporte: dict) -> None:
+    progreso = _calcular_progreso(pasaporte)
+    pasaporte["progreso"] = progreso
+    pasaporte["estado"] = "Ruta completada" if progreso == 100 else "En recuperación"
+
+
+def _extraer_datos_pasaporte(datos):
+    if isinstance(datos, DiagnosticoAyudaInmediata):
+        return {
+            "tipo_ruta": "ayuda_inmediata",
+            "municipio": datos.municipio,
+            "ruta_nombre": "Ayuda inmediata",
+            "actividad_economica": "Ayuda inmediata",
+            "danos": [],
+            "necesidades": [datos.necesidad.lower()],
+            "puede_operar": False,
+        }
+    if isinstance(datos, DiagnosticoVivienda):
+        habitable = (
+            "no" not in datos.habitabilidad.lower()
+            and "parcial" not in datos.habitabilidad.lower()
+        )
+        return {
+            "tipo_ruta": "vivienda",
+            "municipio": datos.municipio,
+            "ruta_nombre": "Recuperar vivienda",
+            "actividad_economica": "Vivienda",
+            "danos": [item.lower() for item in datos.tipo_afectacion],
+            "necesidades": ["reparacion", "vivienda"],
+            "puede_operar": habitable,
+        }
+    return {
+        "tipo_ruta": "ingresos",
+        "municipio": datos.municipio,
+        "ruta_nombre": "Recuperar ingresos",
+        "actividad_economica": datos.actividad_economica,
+        "danos": list(datos.danos),
+        "necesidades": list(datos.necesidades),
+        "puede_operar": datos.puede_operar,
+    }
+
+
+def _pasaporte_publico(pasaporte: dict) -> dict:
+    return {
+        "id": pasaporte["id"],
+        "tipo_ruta": pasaporte["tipo_ruta"],
+        "ruta_nombre": pasaporte["ruta_nombre"],
+        "municipio": pasaporte["municipio"],
+        "actividad_economica": pasaporte["actividad_economica"],
+        "danos": pasaporte["danos"],
+        "necesidades": pasaporte["necesidades"],
+        "puede_operar": pasaporte["puede_operar"],
+        "que_hacer_primero": pasaporte["que_hacer_primero"],
+        "ruta": pasaporte["ruta"],
+        "progreso": pasaporte["progreso"],
+        "estado": pasaporte["estado"],
+        "acciones_completadas": sorted(pasaporte["acciones_completadas"]),
+        "ayudas": pasaporte.get("ayudas", []),
+    }
+
+
+def crear_pasaporte(datos, resultado: dict) -> dict:
+    global _contador
+    _contador += 1
+    pasaporte_id = f"PAS-{str(_contador).zfill(4)}"
+    base = _extraer_datos_pasaporte(datos)
+
+    pasaporte = {
+        "id": pasaporte_id,
+        **base,
+        "que_hacer_primero": resultado["que_hacer_primero"],
+        "ruta": list(resultado["ruta"]),
+        "progreso": 0,
+        "estado": "En recuperación",
+        "acciones_completadas": set(),
+        "ayudas": list(resultado.get("ayudas", [])),
+    }
+
+    _pasaportes[pasaporte_id] = pasaporte
+    return _pasaporte_publico(pasaporte)
+
+
+def obtener_pasaporte(pasaporte_id: str) -> dict:
+    pasaporte = _pasaportes.get(pasaporte_id)
+    if pasaporte is None:
+        raise HTTPException(status_code=404, detail="Pasaporte no encontrado")
+    return _pasaporte_publico(pasaporte)
+
+
+def marcar_accion_completada(pasaporte_id: str, numero: int) -> dict:
+    pasaporte = _pasaportes.get(pasaporte_id)
+    if pasaporte is None:
+        raise HTTPException(status_code=404, detail="Pasaporte no encontrado")
+
+    total = len(pasaporte["ruta"])
+    if numero < 0 or numero >= total:
+        raise HTTPException(status_code=400, detail="Número de acción inválido")
+
+    pasaporte["acciones_completadas"].add(numero)
+    _actualizar_estado(pasaporte)
+    return _pasaporte_publico(pasaporte)
+
+
+def _contar_items(listas: list[list[str]]) -> dict[str, int]:
+    conteo: dict[str, int] = {}
+    for items in listas:
+        for item in items:
+            clave = item.lower().strip()
+            conteo[clave] = conteo.get(clave, 0) + 1
+    return conteo
+
+
+def _contar_campo(pasaportes: list[dict], campo: str) -> dict[str, int]:
+    conteo: dict[str, int] = {}
+    for pasaporte in pasaportes:
+        valor = pasaporte[campo]
+        conteo[valor] = conteo.get(valor, 0) + 1
+    return conteo
+
+
+MAPEO_NECESIDAD_RECURSO = {
+    "equipamiento": "equipamiento",
+    "equipos": "equipamiento",
+    "dinero": "financiamiento",
+    "financiamiento": "financiamiento",
+    "capital": "financiamiento",
+    "reparacion": "reparación",
+    "reparación": "reparación",
+    "vivienda": "reparación",
+    "alojamiento": "alojamiento",
+    "alimentacion": "alimentación",
+    "alimentación": "alimentación",
+    "agua": "agua",
+    "medicamentos": "salud",
+    "salud": "salud",
+    "insumos": "insumos",
+    "transporte": "transporte",
+    "espacio": "espacio",
+}
+
+
+def _contar_recursos_por_categoria(recursos: list[dict]) -> dict[str, int]:
+    conteo: dict[str, int] = {}
+    for recurso in recursos:
+        clave = recurso["categoria"].lower()
+        conteo[clave] = conteo.get(clave, 0) + 1
+    return conteo
+
+
+def _calcular_brechas_detalladas(
+    por_necesidad: dict[str, int],
+    recursos_disponibles: list[dict],
+) -> list[dict]:
+    recursos_por_categoria = _contar_recursos_por_categoria(recursos_disponibles)
+    brechas = []
+
+    for necesidad, solicitudes in sorted(
+        por_necesidad.items(),
+        key=lambda item: item[1],
+        reverse=True,
+    ):
+        categoria = MAPEO_NECESIDAD_RECURSO.get(necesidad.lower(), necesidad.lower())
+        recursos = recursos_por_categoria.get(categoria, 0)
+        brechas.append({
+            "necesidad": necesidad,
+            "solicitudes": solicitudes,
+            "recursos": recursos,
+            "brecha": max(0, solicitudes - recursos),
+        })
+
+    return brechas
+
+
+def _generar_alertas(resumen: dict, tendencias: dict) -> list[dict]:
+    alertas = []
+
+    if resumen["total_afectados"] == 0:
+        return [{
+            "nivel": "info",
+            "mensaje": "Aún no hay diagnósticos registrados en el sistema.",
+        }]
+
+    nuevos = tendencias.get("total_afectados", 0)
+    if nuevos > 0:
+        alertas.append({
+            "nivel": "alta",
+            "mensaje": f"Se registraron {nuevos} nuevo(s) caso(s) desde la última consulta.",
+        })
+
+    nuevos_no_operativos = tendencias.get("total_no_operativos", 0)
+    if nuevos_no_operativos > 0:
+        alertas.append({
+            "nivel": "alta",
+            "mensaje": f"Aumento de {nuevos_no_operativos} negocio(s) o actividad(es) no operativa(s).",
+        })
+
+    por_municipio = resumen.get("por_municipio", {})
+    if por_municipio:
+        municipio_top = max(por_municipio, key=por_municipio.get)
+        total_top = por_municipio[municipio_top]
+        if total_top >= 2:
+            alertas.append({
+                "nivel": "media",
+                "mensaje": f"Concentración de afectados en {municipio_top} ({total_top} casos).",
+            })
+
+    por_necesidad = resumen.get("por_necesidad", {})
+    if por_necesidad:
+        necesidad_top = max(por_necesidad, key=por_necesidad.get)
+        alertas.append({
+            "nivel": "media",
+            "mensaje": f"Necesidad principal: {necesidad_top} ({por_necesidad[necesidad_top]} solicitudes).",
+        })
+
+    brechas_altas = [
+        item for item in resumen.get("brechas", [])
+        if item.get("brecha", 0) > 0
+    ]
+    if brechas_altas:
+        mayor = brechas_altas[0]
+        alertas.append({
+            "nivel": "alta",
+            "mensaje": (
+                f"Brecha detectada en {mayor['necesidad']}: "
+                f"{mayor['solicitudes']} solicitudes vs {mayor['recursos']} recursos demo."
+            ),
+        })
+
+    if not alertas:
+        alertas.append({
+            "nivel": "info",
+            "mensaje": "Sin cambios significativos desde la última consulta.",
+        })
+
+    return alertas
+
+
+def obtener_resumen_dashboard(recursos_disponibles: list[dict]) -> dict:
+    global _resumen_anterior
+
+    lista = list(_pasaportes.values())
+    total = len(lista)
+    no_operativos = sum(1 for p in lista if not p["puede_operar"])
+    operativos = total - no_operativos
+    completadas = sum(1 for p in lista if p["progreso"] == 100)
+    progreso_promedio = (
+        int(sum(p["progreso"] for p in lista) / total) if total > 0 else 0
+    )
+
+    por_necesidad = _contar_items([p["necesidades"] for p in lista])
+    por_tipo_de_dano = _contar_items([p["danos"] for p in lista])
+    brechas = _calcular_brechas_detalladas(por_necesidad, recursos_disponibles)
+
+    resumen = {
+        "total_afectados": total,
+        "total_no_operativos": no_operativos,
+        "total_operativos": operativos,
+        "total_rutas_completadas": completadas,
+        "progreso_promedio": progreso_promedio,
+        "por_municipio": _contar_campo(lista, "municipio"),
+        "por_actividad": _contar_campo(lista, "actividad_economica"),
+        "por_ruta": _contar_campo(lista, "ruta_nombre"),
+        "por_necesidad": por_necesidad,
+        "por_tipo_de_dano": por_tipo_de_dano,
+        "brechas": brechas,
+        "recursos_disponibles": recursos_disponibles,
+    }
+
+    if _resumen_anterior is None:
+        tendencias = {
+            "total_afectados": 0,
+            "total_no_operativos": 0,
+            "total_operativos": 0,
+            "total_rutas_completadas": 0,
+            "progreso_promedio": 0,
+        }
+    else:
+        tendencias = {
+            "total_afectados": resumen["total_afectados"] - _resumen_anterior["total_afectados"],
+            "total_no_operativos": resumen["total_no_operativos"] - _resumen_anterior["total_no_operativos"],
+            "total_operativos": resumen["total_operativos"] - _resumen_anterior["total_operativos"],
+            "total_rutas_completadas": resumen["total_rutas_completadas"] - _resumen_anterior["total_rutas_completadas"],
+            "progreso_promedio": resumen["progreso_promedio"] - _resumen_anterior["progreso_promedio"],
+        }
+
+    _resumen_anterior = {
+        key: resumen[key]
+        for key in (
+            "total_afectados",
+            "total_no_operativos",
+            "total_operativos",
+            "total_rutas_completadas",
+            "progreso_promedio",
+        )
+    }
+
+    resumen["tendencias"] = tendencias
+    resumen["alertas"] = _generar_alertas(resumen, tendencias)
+    return resumen
