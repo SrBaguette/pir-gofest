@@ -16,6 +16,25 @@ TWILIO_WHATSAPP_FROM = os.getenv("TWILIO_WHATSAPP_FROM", "")  # ej: whatsapp:+14
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "")  # ej: https://xxxx.ngrok.io
 
 
+def _validar_credenciales() -> list[str]:
+    """Advertencias sobre formato de credenciales (sin exponer valores)."""
+    avisos = []
+    if TWILIO_ACCOUNT_SID and not TWILIO_ACCOUNT_SID.startswith("AC"):
+        avisos.append("TWILIO_ACCOUNT_SID debe comenzar con AC (Account SID).")
+    if TWILIO_AUTH_TOKEN.startswith("SK"):
+        avisos.append(
+            "TWILIO_AUTH_TOKEN parece un API Key (SK...). "
+            "Usa el Auth Token principal de Account Info en console.twilio.com (32 caracteres, sin prefijo SK)."
+        )
+    elif TWILIO_AUTH_TOKEN and len(TWILIO_AUTH_TOKEN) != 32:
+        avisos.append("TWILIO_AUTH_TOKEN suele tener exactamente 32 caracteres.")
+    if TWILIO_WHATSAPP_FROM and not TWILIO_WHATSAPP_FROM.startswith("whatsapp:+"):
+        avisos.append("TWILIO_WHATSAPP_FROM debe tener formato whatsapp:+573001234567")
+    if not PUBLIC_BASE_URL.strip():
+        avisos.append("PUBLIC_BASE_URL vacío — ngrok no llegará al webhook.")
+    return avisos
+
+
 def twilio_configurado() -> bool:
     return bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_WHATSAPP_FROM)
 
@@ -95,10 +114,23 @@ def enviar_mensaje_whatsapp(destino: str, texto: str) -> dict:
 
 
 def estado_integracion() -> dict:
+    avisos = _validar_credenciales()
+    credenciales_ok = None
+    if twilio_configurado() and not any("SK" in a for a in avisos):
+        try:
+            from twilio.rest import Client
+            Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN).api.accounts(TWILIO_ACCOUNT_SID).fetch()
+            credenciales_ok = True
+        except Exception:
+            credenciales_ok = False
+            avisos.append("Twilio rechazó SID + Auth Token. Revisa credenciales en console.twilio.com.")
+
     return {
         "configurado": twilio_configurado(),
+        "credenciales_validas": credenciales_ok,
         "webhook_url": webhook_url() if PUBLIC_BASE_URL else None,
         "whatsapp_from": TWILIO_WHATSAPP_FROM or None,
+        "avisos": avisos,
         "variables_requeridas": [
             "TWILIO_ACCOUNT_SID",
             "TWILIO_AUTH_TOKEN",
