@@ -1,6 +1,6 @@
 # Pasaporte Inteligente de Recuperación (PIR)
 
-Plataforma adaptativa para conectar **personas afectadas** con **entidades de apoyo** tras una emergencia (terremoto Colombia 2026 — GoFest).
+Plataforma para la optimización en la distribución de recursos de los afectados por el terremoto de Colombia 2026 — **GoFest**.
 
 > Cada persona recibe una ruta. Cada interacción genera inteligencia. Cada recurso puede generar más recuperación.
 
