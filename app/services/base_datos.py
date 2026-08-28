@@ -1,9 +1,26 @@
 import os
+from urllib.parse import quote_plus
 
 from sqlalchemy import create_engine, text
 
 
 _database_url = os.getenv("DATABASE_URL")
+if not _database_url:
+    database_user = os.getenv("DB_USER")
+    database_password = os.getenv("DB_PASS")
+    database_name = os.getenv("DB_NAME")
+    database_host = os.getenv("DB_HOST", "127.0.0.1")
+    if database_user and database_password and database_name:
+        if database_host.startswith("/cloudsql/"):
+            _database_url = (
+                f"postgresql+psycopg://{quote_plus(database_user)}:{quote_plus(database_password)}"
+                f"@/{database_name}?host={quote_plus(database_host)}"
+            )
+        else:
+            _database_url = (
+                f"postgresql+psycopg://{quote_plus(database_user)}:{quote_plus(database_password)}"
+                f"@{database_host}:5432/{database_name}"
+            )
 if _database_url and _database_url.startswith("postgres://"):
     _database_url = "postgresql+psycopg://" + _database_url.removeprefix("postgres://")
 
