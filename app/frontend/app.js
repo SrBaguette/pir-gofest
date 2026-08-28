@@ -115,10 +115,10 @@ function updateHeader() {
   headerInner.classList.toggle("header__inner--wide", enDashboard);
   headerNav.innerHTML = `
     <a href="#" class="header__link ${!enDashboard ? "header__link--active" : ""}" data-nav="persona">
-      Persona afectada
+      Persona
     </a>
     <a href="#dashboard" class="header__link ${enDashboard ? "header__link--active" : ""}" data-nav="dashboard">
-      Vista de entidades
+      Entidades
     </a>
   `;
 
@@ -191,11 +191,11 @@ function renderRouteSelect() {
   return `
     <section class="card">
       <h2 class="question__title">¿Qué necesitas recuperar primero?</h2>
-      <p class="question__hint">Selecciona la opción que mejor describe tu situación.</p>
-      <div class="options">
-        ${optionButton("tipo_ruta", "Ayuda inmediata", state.tipo_ruta === "ayuda_inmediata")}
-        ${optionButton("tipo_ruta", "Recuperar vivienda", state.tipo_ruta === "vivienda")}
-        ${optionButton("tipo_ruta", "Recuperar ingresos", state.tipo_ruta === "ingresos")}
+      <p class="question__hint">Elige una ruta. Cada una tiene un flujo de 5 pasos.</p>
+      <div class="route-cards">
+        ${renderRouteCard("ayuda_inmediata", "Ayuda inmediata", "Alimentación, alojamiento, agua, medicamentos, servicios básicos.", "inmediata")}
+        ${renderRouteCard("vivienda", "Recuperar vivienda", "Daños estructurales, habitabilidad y servicios afectados.", "vivienda")}
+        ${renderRouteCard("ingresos", "Recuperar ingresos", "Comercio, emprendimiento, producción o trabajo independiente.", "ingresos")}
       </div>
       ${state.error ? `<p class="error-msg">${state.error}</p>` : ""}
       <div class="actions">
@@ -207,12 +207,9 @@ function renderRouteSelect() {
 }
 
 function bindRouteSelect() {
-  document.querySelectorAll(".option").forEach((btn) => {
+  document.querySelectorAll(".route-card").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const label = btn.dataset.value;
-      if (label === "Ayuda inmediata") state.tipo_ruta = "ayuda_inmediata";
-      else if (label === "Recuperar vivienda") state.tipo_ruta = "vivienda";
-      else state.tipo_ruta = "ingresos";
+      state.tipo_ruta = btn.dataset.route;
       state.error = "";
       render();
     });
@@ -353,23 +350,26 @@ function bindPasaporteActions() {
 function renderWelcome() {
   return `
     <section class="card card--welcome">
-      <h1 class="welcome__title">Ruta de Recuperación</h1>
+      <h1 class="welcome__title">¿Qué necesitas recuperar?</h1>
       <p class="welcome__subtitle">
-        Cuéntanos qué ocurrió y te ayudaremos a identificar qué hacer primero.
+        Diagnóstico guiado en 5 pasos. Al finalizar recibes tu Pasaporte de Recuperación con ruta y ayudas compatibles.
       </p>
-      <span class="welcome__badge">Diagnóstico de aproximadamente 3 minutos</span>
-      <p class="welcome__hint">¿Ya tienes un pasaporte? Consulta tu progreso cuando quieras.</p>
+      <div class="welcome__channels">
+        ${renderSemaforo("verde", "Web")}
+        ${renderSemaforo("amarillo", "WhatsApp próximamente")}
+      </div>
       <div class="actions actions--single">
         <button type="button" class="btn btn--primary btn--wide" id="btn-start">
-          Comenzar diagnóstico
+          Iniciar diagnóstico
         </button>
         <button type="button" class="btn btn--accent btn--wide" id="btn-consultar-pasaporte">
-          Consultar mi pasaporte
+          Consultar pasaporte
         </button>
         <button type="button" class="btn btn--secondary btn--wide" id="btn-dashboard">
-          Vista de entidades
+          Panel de entidades
         </button>
       </div>
+      <p class="welcome__hint">Si ya tienes un ID (PAS-0001), usa consultar pasaporte.</p>
     </section>
   `;
 }
@@ -626,22 +626,29 @@ function renderResult() {
 
   return `
     <section class="card">
-      <p class="result__label">Tu Ruta de Recuperación</p>
-      <h2 class="result__title">${escapeHtml(ruta_nombre || "Esto es lo que te recomendamos")}</h2>
+      <p class="result__label">Resultado del diagnóstico</p>
+      <h2 class="result__title">${escapeHtml(ruta_nombre || "Tu ruta de recuperación")}</h2>
+
+      ${pasaporte ? `
+        <div class="semaforo-row">
+          ${renderSemaforo(pasaporte.prioridad_nivel, `Prioridad ${pasaporte.prioridad_etiqueta}`)}
+          ${renderSemaforo(pasaporte.confianza_nivel, pasaporte.confianza_etiqueta)}
+        </div>
+      ` : ""}
 
       <div class="result__priority">
-        <p class="result__priority-label">¿Qué hacer primero?</p>
+        <p class="result__priority-label">Acción prioritaria</p>
         <p class="result__priority-text">${escapeHtml(que_hacer_primero)}</p>
       </div>
 
       ${barrera_principal ? `
-        <div class="result__priority" style="margin-top:-1rem;background:#faf0e8;border-left-color:var(--color-accent);">
-          <p class="result__priority-label">Principal barrera</p>
+        <div class="result__priority result__priority--barrera">
+          <p class="result__priority-label">Barrera principal</p>
           <p class="result__priority-text">${escapeHtml(barrera_principal)}</p>
         </div>
       ` : ""}
 
-      <h3 class="result__section-title">Tu ruta</h3>
+      <h3 class="result__section-title">Pasos de tu ruta</h3>
       <ol class="route-steps">
         ${ruta.map((paso, index) => `
           <li class="route-step">
@@ -656,7 +663,7 @@ function renderResult() {
 
       <div class="result__actions">
         <button type="button" class="btn btn--secondary" id="btn-restart">
-          Realizar otro diagnóstico
+          Nuevo diagnóstico
         </button>
       </div>
     </section>
@@ -665,61 +672,64 @@ function renderResult() {
 
 function renderPasaporte(pasaporte) {
   const completadas = new Set(pasaporte.acciones_completadas || []);
+  const progresoNivel = pasaporte.progreso >= 75 ? "verde" : pasaporte.progreso >= 40 ? "amarillo" : "rojo";
 
   return `
     <section class="pasaporte" id="seccion-pasaporte">
-      <h3 class="pasaporte__title">Mi Pasaporte de Recuperación</h3>
-      <div class="pasaporte__meta">
-        <div class="pasaporte__row">
-          <span class="pasaporte__label">ID:</span>
-          <span>${escapeHtml(pasaporte.id)}</span>
-        </div>
-        <div class="pasaporte__row">
-          <span class="pasaporte__label">Ruta:</span>
-          <span>${escapeHtml(pasaporte.ruta_nombre || pasaporte.actividad_economica)}</span>
-        </div>
-        <div class="pasaporte__row">
-          <span class="pasaporte__label">Municipio:</span>
-          <span>${escapeHtml(pasaporte.municipio)}</span>
-        </div>
-        ${pasaporte.danos.length ? `
-        <div class="pasaporte__row">
-          <span class="pasaporte__label">Afectaciones:</span>
-          <span>${pasaporte.danos.map(escapeHtml).join(", ")}</span>
-        </div>` : ""}
-        <div class="pasaporte__row">
-          <span class="pasaporte__label">Necesidades:</span>
-          <span>${pasaporte.necesidades.map(escapeHtml).join(", ")}</span>
-        </div>
+      <div class="pasaporte__header">
+        <h3 class="pasaporte__title">Pasaporte de Recuperación</h3>
+        <span class="pasaporte__id">${escapeHtml(pasaporte.id)}</span>
       </div>
+      <div class="pasaporte__body">
+        <div class="semaforo-row">
+          ${renderSemaforo(pasaporte.prioridad_nivel, `Prioridad ${pasaporte.prioridad_etiqueta}`)}
+          ${renderSemaforo(pasaporte.confianza_nivel, pasaporte.confianza_etiqueta)}
+          ${renderSemaforo(progresoNivel, `${pasaporte.progreso}% recuperación`)}
+        </div>
 
-      <div class="pasaporte__status">
-        <span class="pasaporte__badge ${pasaporte.progreso === 100 ? "pasaporte__badge--done" : ""}">
-          ${escapeHtml(pasaporte.estado)}
-        </span>
-        <div class="pasaporte__progress-wrap">
+        <div class="pasaporte__meta">
+          <div class="pasaporte__row">
+            <span class="pasaporte__label">Ruta</span>
+            <span>${escapeHtml(pasaporte.ruta_nombre || pasaporte.actividad_economica)}</span>
+          </div>
+          <div class="pasaporte__row">
+            <span class="pasaporte__label">Municipio</span>
+            <span>${escapeHtml(pasaporte.municipio)}</span>
+          </div>
+          ${pasaporte.danos.length ? `
+          <div class="pasaporte__row">
+            <span class="pasaporte__label">Afectación</span>
+            <span>${pasaporte.danos.map(escapeHtml).join(", ")}</span>
+          </div>` : ""}
+          <div class="pasaporte__row">
+            <span class="pasaporte__label">Necesidades</span>
+            <span>${pasaporte.necesidades.map(escapeHtml).join(", ")}</span>
+          </div>
+          <div class="pasaporte__row">
+            <span class="pasaporte__label">Estado</span>
+            <span>${escapeHtml(pasaporte.estado)}</span>
+          </div>
+        </div>
+
+        <div class="pasaporte__status">
           <div class="pasaporte__progress-bar">
             <div class="pasaporte__progress-fill" style="width: ${pasaporte.progreso}%"></div>
           </div>
-          <p class="pasaporte__progress-text">${pasaporte.progreso}% completado</p>
+          <p class="pasaporte__progress-text">${pasaporte.progreso}%</p>
         </div>
-      </div>
 
-      <h4 class="result__section-title">Acciones de tu ruta</h4>
-      <ul class="acciones-list">
-        ${pasaporte.ruta.map((accion, index) => `
-          <li>
-            <label class="accion-item ${completadas.has(index) ? "accion-item--done" : ""}">
-              <input
-                type="checkbox"
-                data-accion="${index}"
-                ${completadas.has(index) ? "checked disabled" : ""}
-              >
-              <span>${escapeHtml(accion)}</span>
-            </label>
-          </li>
-        `).join("")}
-      </ul>
+        <h4 class="result__section-title">Acciones</h4>
+        <ul class="acciones-list">
+          ${pasaporte.ruta.map((accion, index) => `
+            <li>
+              <label class="accion-item ${completadas.has(index) ? "accion-item--done" : ""}">
+                <input type="checkbox" data-accion="${index}" ${completadas.has(index) ? "checked disabled" : ""}>
+                <span>${escapeHtml(accion)}</span>
+              </label>
+            </li>
+          `).join("")}
+        </ul>
+      </div>
     </section>
   `;
 }
@@ -1194,6 +1204,30 @@ function escapeHtml(text) {
     .replace(/"/g, "&quot;");
 }
 
+function renderSemaforo(nivel, etiqueta) {
+  const n = nivel || "amarillo";
+  return `<span class="semaforo semaforo--${escapeHtml(n)}"><span class="semaforo__dot"></span>${escapeHtml(etiqueta)}</span>`;
+}
+
+function nivelAlertaToSemaforo(nivel) {
+  if (nivel === "alta") return "rojo";
+  if (nivel === "media") return "amarillo";
+  return "verde";
+}
+
+function renderRouteCard(tipo, titulo, desc, indicadorClass) {
+  const selected = state.tipo_ruta === tipo;
+  return `
+    <button type="button" class="route-card ${selected ? "route-card--selected" : ""}" data-route="${tipo}">
+      <span class="route-card__indicator route-card__indicator--${indicadorClass}"></span>
+      <div class="route-card__body">
+        <p class="route-card__title">${escapeHtml(titulo)}</p>
+        <p class="route-card__desc">${escapeHtml(desc)}</p>
+      </div>
+    </button>
+  `;
+}
+
 function formatTrend(value) {
   if (value > 0) return { text: `+${value} desde la última consulta`, className: "metric-card__trend--up" };
   if (value < 0) return { text: `${value} desde la última consulta`, className: "metric-card__trend--up" };
@@ -1229,9 +1263,31 @@ function renderRanking(items, emptyLabel) {
 function renderDashboardView() {
   app.innerHTML = state.dashboardData
     ? renderDashboard(state.dashboardData)
-    : `<section class="card loading"><div class="loading__spinner"></div><p class="loading__text">Cargando dashboard…</p></section>`;
+    : `<section class="card loading"><div class="loading__spinner"></div><p class="loading__text">Cargando panel…</p></section>`;
 
+  bindDashboardActions();
   startDashboardPolling();
+}
+
+function bindDashboardActions() {
+  const seedBtn = document.getElementById("btn-seed-demo");
+  if (!seedBtn) return;
+  seedBtn.addEventListener("click", async () => {
+    seedBtn.disabled = true;
+    seedBtn.textContent = "Generando…";
+    try {
+      const response = await fetch(`${API_BASE}/demo/seed?cantidad=100&reemplazar=true`, { method: "POST" });
+      if (!response.ok) throw new Error("No se pudo generar datos demo.");
+      const result = await response.json();
+      showToast(result.mensaje);
+      await fetchDashboard();
+    } catch (error) {
+      showToast(error.message || "Error al cargar demo.");
+    } finally {
+      seedBtn.disabled = false;
+      seedBtn.textContent = "Cargar datos demo (100)";
+    }
+  });
 }
 
 function renderAlertas(alertas) {
@@ -1243,34 +1299,57 @@ function renderAlertas(alertas) {
     <ul class="alertas-list">
       ${alertas.map((alerta) => `
         <li class="alerta alerta--${escapeHtml(alerta.nivel || "info")}">
-          <span class="alerta__nivel">${escapeHtml((alerta.nivel || "info").toUpperCase())}</span>
-          <p class="alerta__mensaje">${escapeHtml(alerta.mensaje)}</p>
+          <span class="alerta__dot"></span>
+          <div class="alerta__body">
+            <span class="alerta__nivel">${escapeHtml((alerta.nivel || "info").toUpperCase())}</span>
+            <p class="alerta__mensaje">${escapeHtml(alerta.mensaje)}</p>
+          </div>
         </li>
       `).join("")}
     </ul>
   `;
 }
 
+function renderTendenciaBanner(tendencia) {
+  if (!tendencia) return "";
+  return `
+    <div class="tendencia-banner tendencia-banner--${escapeHtml(tendencia.nivel)}">
+      <strong>Detección de tendencia emergente</strong>
+      En ${escapeHtml(tendencia.municipio)} aumentaron reportes de
+      <strong>${escapeHtml(tendencia.necesidad)}</strong>
+      (${tendencia.porcentaje}% del total, ${tendencia.casos} casos).
+      <br><em>Acción recomendada: revisar disponibilidad de programas para esta zona.</em>
+    </div>
+  `;
+}
+
 function renderDashboard(data) {
   const t = data.tendencias || {};
   const metrics = [
-    { label: "Personas afectadas", value: data.total_afectados, trend: t.total_afectados },
-    { label: "Negocios no operativos", value: data.total_no_operativos, trend: t.total_no_operativos },
+    { label: "Afectados registrados", value: data.total_afectados, trend: t.total_afectados },
+    { label: "No operativos", value: data.total_no_operativos, trend: t.total_no_operativos },
     { label: "Rutas completadas", value: data.total_rutas_completadas, trend: t.total_rutas_completadas },
-    { label: "Progreso promedio", value: `${data.progreso_promedio}%`, trend: t.progreso_promedio, suffix: "%" },
+    { label: "Progreso promedio", value: `${data.progreso_promedio}%`, trend: t.progreso_promedio },
   ];
 
-  const municipios = Object.entries(data.por_municipio || {});
+  const municipios = data.municipios_detalle || Object.entries(data.por_municipio || {}).map(([nombre, total]) => ({
+    nombre, total, nivel: "verde",
+  }));
 
   return `
     <div class="dashboard">
       <div class="dashboard__header">
-        <h1 class="dashboard__title">Dashboard de entidad</h1>
-        <p class="dashboard__subtitle">
-          Vista agregada para alcaldías, gobiernos y organizaciones de apoyo.
-        </p>
-        ${state.dashboardUpdatedAt ? `<p class="dashboard__updated">Última actualización: ${state.dashboardUpdatedAt}</p>` : ""}
+        <div>
+          <h1 class="dashboard__title">Panel territorial</h1>
+          <p class="dashboard__subtitle">Necesidades, brechas y alertas para entidades de respuesta.</p>
+          ${state.dashboardUpdatedAt ? `<p class="dashboard__updated">Actualizado: ${state.dashboardUpdatedAt}</p>` : ""}
+        </div>
+        <div class="dashboard__actions">
+          <button type="button" class="btn btn--secondary btn--sm" id="btn-seed-demo">Cargar datos demo (100)</button>
+        </div>
       </div>
+
+      ${renderTendenciaBanner(data.tendencia_emergente)}
 
       <div class="dashboard-grid">
         ${metrics.map((metric) => {
@@ -1287,44 +1366,65 @@ function renderDashboard(data) {
 
       <section class="dashboard-section">
         <h2 class="dashboard-section__title">Alertas</h2>
-        <p class="ayudas__intro">Señales detectadas desde la última consulta del dashboard.</p>
         ${renderAlertas(data.alertas)}
       </section>
 
       <section class="dashboard-section">
-        <h2 class="dashboard-section__title">¿Dónde están los afectados?</h2>
+        <h2 class="dashboard-section__title">Distribución por municipio</h2>
         <div class="municipio-cards">
           ${municipios.length > 0
-            ? municipios.map(([nombre, total]) => `
-                <article class="municipio-card">
-                  <p class="municipio-card__name">${escapeHtml(nombre)}</p>
-                  <p class="municipio-card__count">${total}</p>
+            ? municipios.map((m) => `
+                <article class="municipio-card municipio-card--${escapeHtml(m.nivel || "verde")}">
+                  <p class="municipio-card__name">${escapeHtml(m.nombre)}</p>
+                  <p class="municipio-card__count">${m.total}</p>
+                  ${renderSemaforo(m.nivel, m.nivel === "rojo" ? "Alta concentración" : m.nivel === "amarillo" ? "Concentración media" : "Normal")}
                 </article>
               `).join("")
-            : `<p class="ayudas__empty">Aún no hay diagnósticos registrados.</p>`}
+            : `<p class="ayudas__empty">Sin datos. Usa "Cargar datos demo" para poblar el panel.</p>`}
         </div>
       </section>
 
       <section class="dashboard-section">
-        <h2 class="dashboard-section__title">¿Qué necesitan?</h2>
-        ${renderRanking(data.por_necesidad, "Sin necesidades registradas todavía.")}
+        <h2 class="dashboard-section__title">Prioridad de casos</h2>
+        ${renderRanking(data.por_prioridad, "Sin datos de prioridad.")}
       </section>
 
       <section class="dashboard-section">
-        <h2 class="dashboard-section__title">¿Qué rutas siguen las personas?</h2>
-        ${renderRanking(data.por_ruta, "Sin rutas registradas todavía.")}
+        <h2 class="dashboard-section__title">Necesidades reportadas</h2>
+        ${renderRanking(data.por_necesidad, "Sin necesidades registradas.")}
       </section>
 
       <section class="dashboard-section">
-        <h2 class="dashboard-section__title">Tendencias</h2>
-        <div class="dashboard-grid">
-          ${Object.entries(t).map(([key, value]) => `
-            <article class="metric-card">
-              <p class="metric-card__label">${escapeHtml(key.replace(/_/g, " "))}</p>
-              <p class="metric-card__value">${value > 0 ? `+${value}` : value}</p>
-            </article>
-          `).join("")}
-        </div>
+        <h2 class="dashboard-section__title">Rutas activas</h2>
+        ${renderRanking(data.por_ruta, "Sin rutas registradas.")}
+      </section>
+
+      <section class="dashboard-section">
+        <h2 class="dashboard-section__title">Brechas (necesidad vs recursos)</h2>
+        <table class="brechas-table">
+          <thead>
+            <tr>
+              <th>Estado</th>
+              <th>Necesidad</th>
+              <th>Solicitudes</th>
+              <th>Recursos</th>
+              <th>Brecha</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${(data.brechas || []).length > 0
+              ? data.brechas.map((brecha) => `
+                  <tr class="brecha-row--${escapeHtml(brecha.nivel || "verde")}">
+                    <td>${renderSemaforo(brecha.nivel, brecha.nivel === "rojo" ? "Crítica" : brecha.nivel === "amarillo" ? "Atención" : "Cubierta")}</td>
+                    <td>${escapeHtml(brecha.necesidad)}</td>
+                    <td>${brecha.solicitudes}</td>
+                    <td>${brecha.recursos}</td>
+                    <td>${brecha.brecha}</td>
+                  </tr>
+                `).join("")
+              : `<tr><td colspan="5">Sin datos de brechas.</td></tr>`}
+          </tbody>
+        </table>
       </section>
 
       <section class="dashboard-section">
@@ -1338,40 +1438,7 @@ function renderDashboard(data) {
             </article>
           `).join("")}
         </div>
-        <p class="ayudas__disclaimer">
-          Los recursos mostrados en esta versión son demostrativos.
-          En producción se conectarían con fuentes oficiales verificadas.
-        </p>
-      </section>
-
-      <section class="dashboard-section">
-        <h2 class="dashboard-section__title">¿Dónde están las brechas?</h2>
-        <p class="ayudas__intro">
-          Comparación entre solicitudes registradas y recursos demostrativos disponibles.
-          Brecha = solicitudes − recursos.
-        </p>
-        <table class="brechas-table">
-          <thead>
-            <tr>
-              <th>Necesidad</th>
-              <th>Solicitudes</th>
-              <th>Recursos</th>
-              <th>Brecha</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${(data.brechas || []).length > 0
-              ? data.brechas.map((brecha) => `
-                  <tr class="${brecha.brecha > 0 ? "brecha-row--alta" : ""}">
-                    <td>${escapeHtml(brecha.necesidad)}</td>
-                    <td>${brecha.solicitudes}</td>
-                    <td>${brecha.recursos}</td>
-                    <td>${brecha.brecha}</td>
-                  </tr>
-                `).join("")
-              : `<tr><td colspan="4">Sin datos de brechas todavía.</td></tr>`}
-          </tbody>
-        </table>
+        <p class="ayudas__disclaimer">Recursos demostrativos. En producción se conectarían con fuentes oficiales.</p>
       </section>
     </div>
   `;

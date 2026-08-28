@@ -9,6 +9,13 @@ from app.schemas import (
     DiagnosticoIngresos,
     DiagnosticoVivienda,
 )
+from app.services.semaforo import (
+    calcular_confianza,
+    calcular_prioridad,
+    detectar_tendencia_emergente,
+    enriquecer_brechas,
+    semaforo_municipio,
+)
 
 _pasaportes: dict[str, dict] = {}
 _contador = 0
@@ -29,6 +36,13 @@ def _actualizar_estado(pasaporte: dict) -> None:
     pasaporte["estado"] = "Ruta completada" if progreso == 100 else "En recuperación"
 
 
+def limpiar_pasaportes() -> None:
+    global _contador, _resumen_anterior
+    _pasaportes.clear()
+    _contador = 0
+    _resumen_anterior = None
+
+
 def _extraer_datos_pasaporte(datos):
     if isinstance(datos, DiagnosticoAyudaInmediata):
         return {
@@ -39,6 +53,7 @@ def _extraer_datos_pasaporte(datos):
             "danos": [],
             "necesidades": [datos.necesidad.lower()],
             "puede_operar": False,
+            "urgencia": datos.urgencia.lower(),
         }
     if isinstance(datos, DiagnosticoVivienda):
         habitable = (
@@ -81,6 +96,11 @@ def _pasaporte_publico(pasaporte: dict) -> dict:
         "estado": pasaporte["estado"],
         "acciones_completadas": sorted(pasaporte["acciones_completadas"]),
         "ayudas": pasaporte.get("ayudas", []),
+        "prioridad_nivel": pasaporte.get("prioridad_nivel", "amarillo"),
+        "prioridad_etiqueta": pasaporte.get("prioridad_etiqueta", "Media"),
+        "confianza_nivel": pasaporte.get("confianza_nivel", "amarillo"),
+        "confianza_etiqueta": pasaporte.get("confianza_etiqueta", "Requiere validación"),
+        "urgencia": pasaporte.get("urgencia"),
     }
 
 
@@ -89,6 +109,8 @@ def crear_pasaporte(datos, resultado: dict) -> dict:
     _contador += 1
     pasaporte_id = f"PAS-{str(_contador).zfill(4)}"
     base = _extraer_datos_pasaporte(datos)
+    prioridad_nivel, prioridad_etiqueta = calcular_prioridad(datos)
+    confianza_nivel, confianza_etiqueta = calcular_confianza(datos)
 
     pasaporte = {
         "id": pasaporte_id,
@@ -99,6 +121,10 @@ def crear_pasaporte(datos, resultado: dict) -> dict:
         "estado": "En recuperación",
         "acciones_completadas": set(),
         "ayudas": list(resultado.get("ayudas", [])),
+        "prioridad_nivel": prioridad_nivel,
+        "prioridad_etiqueta": prioridad_etiqueta,
+        "confianza_nivel": confianza_nivel,
+        "confianza_etiqueta": confianza_etiqueta,
     }
 
     _pasaportes[pasaporte_id] = pasaporte
@@ -243,11 +269,23 @@ def _generar_alertas(resumen: dict, tendencias: dict) -> list[dict]:
     ]
     if brechas_altas:
         mayor = brechas_altas[0]
+        nivel = mayor.get("nivel", "rojo")
         alertas.append({
-            "nivel": "alta",
+            "nivel": "alta" if nivel == "rojo" else "media",
             "mensaje": (
                 f"Brecha detectada en {mayor['necesidad']}: "
                 f"{mayor['solicitudes']} solicitudes vs {mayor['recursos']} recursos demo."
+            ),
+        })
+
+    tendencia = resumen.get("tendencia_emergente")
+    if tendencia:
+        alertas.insert(0, {
+            "nivel": "alta" if tendencia["nivel"] == "rojo" else "media",
+            "mensaje": (
+                f"Tendencia emergente: {tendencia['porcentaje']}% de reportes de "
+                f"{tendencia['necesidad']} concentrados en {tendencia['municipio']} "
+                f"({tendencia['casos']} casos)."
             ),
         })
 
@@ -274,7 +312,23 @@ def obtener_resumen_dashboard(recursos_disponibles: list[dict]) -> dict:
 
     por_necesidad = _contar_items([p["necesidades"] for p in lista])
     por_tipo_de_dano = _contar_items([p["danos"] for p in lista])
-    brechas = _calcular_brechas_detalladas(por_necesidad, recursos_disponibles)
+    brechas = enriquecer_brechas(
+        _calcular_brechas_detalladas(por_necesidad, recursos_disponibles)
+    )
+
+    por_municipio = _contar_campo(lista, "municipio")
+    max_municipio = max(por_municipio.values()) if por_municipio else 0
+    municipios_detalle = [
+        {
+            "nombre": nombre,
+            "total": total,
+            "nivel": semaforo_municipio(total, max_municipio),
+        }
+        for nombre, total in sorted(por_municipio.items(), key=lambda x: x[1], reverse=True)
+    ]
+
+    por_prioridad = _contar_campo(lista, "prioridad_etiqueta")
+    tendencia_emergente = detectar_tendencia_emergente(lista)
 
     resumen = {
         "total_afectados": total,
@@ -282,12 +336,15 @@ def obtener_resumen_dashboard(recursos_disponibles: list[dict]) -> dict:
         "total_operativos": operativos,
         "total_rutas_completadas": completadas,
         "progreso_promedio": progreso_promedio,
-        "por_municipio": _contar_campo(lista, "municipio"),
+        "por_municipio": por_municipio,
+        "municipios_detalle": municipios_detalle,
         "por_actividad": _contar_campo(lista, "actividad_economica"),
         "por_ruta": _contar_campo(lista, "ruta_nombre"),
         "por_necesidad": por_necesidad,
+        "por_prioridad": por_prioridad,
         "por_tipo_de_dano": por_tipo_de_dano,
         "brechas": brechas,
+        "tendencia_emergente": tendencia_emergente,
         "recursos_disponibles": recursos_disponibles,
     }
 
