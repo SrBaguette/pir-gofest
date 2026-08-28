@@ -1,9 +1,12 @@
 from dotenv import load_dotenv
+from pathlib import Path
 
 load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.schemas import (
     DiagnosticoAyudaInmediata,
@@ -36,6 +39,8 @@ app = FastAPI(
     version="0.4.0",
 )
 
+FRONTEND_DIR = Path(__file__).parent / "frontend"
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -62,23 +67,7 @@ def _parsear_diagnostico(body: dict):
 
 @app.get("/")
 def inicio():
-    twilio = estado_integracion()
-    return {
-        "mensaje": "Pasaporte Inteligente de Recuperación API funcionando",
-        "version": "0.4.0",
-        "modulos_ml": [
-            "ml1_necesidades_emergentes",
-            "ml2_mapa_inteligente",
-            "gemini_nlu",
-            "gemini_confianza_ml4",
-            "gemini_recomendacion_ml3",
-        ],
-        "gemini": {"activo": estado_gemini().get("activo"), "modelo": estado_gemini().get("modelo")},
-        "whatsapp": {
-            "configurado": twilio["configurado"],
-            "webhook": twilio["webhook_url"],
-        },
-    }
+    return FileResponse(FRONTEND_DIR / "index.html")
 
 
 @app.post("/diagnostico")
@@ -190,3 +179,10 @@ def demo_seed(cantidad: int = 150, reemplazar: bool = False):
     if cantidad < 1 or cantidad > 500:
         raise HTTPException(status_code=400, detail="cantidad debe estar entre 1 y 500")
     return generar_casos(cantidad=cantidad, reemplazar=reemplazar)
+
+
+app.mount(
+    "/",
+    StaticFiles(directory=FRONTEND_DIR, html=True),
+    name="frontend",
+)
